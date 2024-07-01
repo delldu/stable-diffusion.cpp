@@ -1,0 +1,11 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=/usr/local/lib
+includedir=/usr/local/include
+pkgincludedir=/usr/local/include/stable-diffusion
+
+Name: stable-diffusion
+Description: Stable Diffusion Library.
+Version: 1.0.0
+Libs: -L${libdir} -lstable-diffusion -lggml
+Cflags: -I${pkgincludedir} -I${includedir}
