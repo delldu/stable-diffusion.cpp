@@ -436,6 +436,7 @@ struct ControlNet : public GGMLModule {
         std::map<std::string, ggml_tensor*> tensors;
         control_net.get_param_tensors(tensors);
         std::set<std::string> ignore_tensors;
+        ignore_tensors.insert("lora_controlnet"); // xxxx_debug, tensor 'lora_controlnet' is empty in controlnet files, eg: control-lora-canny-rank128.safetensors
 
         ModelLoader model_loader;
         if (!model_loader.init_from_file(file_path)) {

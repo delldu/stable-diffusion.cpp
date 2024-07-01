@@ -28,6 +28,8 @@ extern "C" {
 #include <stdint.h>
 #include <string.h>
 
+#define CheckPoint(fmt, arg...) printf("==> CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
+
 enum rng_type_t {
     STD_DEFAULT_RNG,
     CUDA_RNG
@@ -205,6 +207,8 @@ SD_API uint8_t* preprocess_canny(uint8_t* img,
                                  float weak,
                                  float strong,
                                  bool inverse);
+
+int ggml_cuda_available();
 
 #ifdef __cplusplus
 }

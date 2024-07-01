@@ -505,8 +505,13 @@ void preprocess_tensor(TensorStorage tensor_storage,
     std::string new_name = convert_tensor_name(tensor_storage.name);
 
     // convert unet transformer linear to conv2d 1x1
-    if (starts_with(new_name, "model.diffusion_model.") &&
-        (ends_with(new_name, "proj_in.weight") || ends_with(new_name, "proj_out.weight"))) {
+    // xxxx_debug
+    // if (starts_with(new_name, "model.diffusion_model.") &&
+    //     (ends_with(new_name, "proj_in.weight") || ends_with(new_name, "proj_out.weight"))) {
+    //     tensor_storage.unsqueeze();
+    // }
+
+    if ((ends_with(new_name, "proj_in.weight") || ends_with(new_name, "proj_out.weight"))) {
         tensor_storage.unsqueeze();
     }
 

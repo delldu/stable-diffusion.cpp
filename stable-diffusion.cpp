@@ -1723,3 +1723,11 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
 
     return result_images;
 }
+
+int ggml_cuda_available()
+{
+#ifdef SD_USE_CUBLAS
+    return 1;
+#endif
+    return 0;    
+}
