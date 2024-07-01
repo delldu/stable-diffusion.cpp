@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#define SD_VERSION "1.0.0"
+
 // #include "preprocessing.hpp"
 #include "stable-diffusion.h"
 
@@ -153,7 +155,7 @@ void print_params(SDParams params) {
 }
 
 void print_usage(int argc, const char* argv[]) {
-    printf("usage: %s [arguments]\n", argv[0]);
+    printf("usage: %s (%s) [arguments]\n", argv[0], SD_VERSION);
     printf("\n");
     printf("arguments:\n");
     printf("  -h, --help                         show this help message and exit\n");
@@ -162,42 +164,42 @@ void print_usage(int argc, const char* argv[]) {
     printf("                                     If threads <= 0, then threads will be set to the number of CPU physical cores\n");
     printf("  -m, --model [MODEL]                path to model\n");
     printf("  --vae [VAE]                        path to vae\n");
-    printf("  --taesd [TAESD_PATH]               path to taesd. Using Tiny AutoEncoder for fast decoding (low quality)\n");
-    printf("  --control-net [CONTROL_PATH]       path to control net model\n");
-    printf("  --embd-dir [EMBEDDING_PATH]        path to embeddings.\n");
-    printf("  --stacked-id-embd-dir [DIR]        path to PHOTOMAKER stacked id embeddings.\n");
-    printf("  --input-id-images-dir [DIR]        path to PHOTOMAKER input id images dir.\n");
-    printf("  --normalize-input                  normalize PHOTOMAKER input id images\n");
-    printf("  --upscale-model [ESRGAN_PATH]      path to esrgan model. Upscale images after generate, just RealESRGAN_x4plus_anime_6B supported by now.\n");
-    printf("  --upscale-repeats                  Run the ESRGAN upscaler this many times (default 1)\n");
+    // printf("  --taesd [TAESD_PATH]               path to taesd. Using Tiny AutoEncoder for fast decoding (low quality)\n");
+    // printf("  --control-net [CONTROL_PATH]       path to control net model\n");
+    // printf("  --embd-dir [EMBEDDING_PATH]        path to embeddings.\n");
+    // printf("  --stacked-id-embd-dir [DIR]        path to PHOTOMAKER stacked id embeddings.\n");
+    // printf("  --input-id-images-dir [DIR]        path to PHOTOMAKER input id images dir.\n");
+    // printf("  --normalize-input                  normalize PHOTOMAKER input id images\n");
+    // printf("  --upscale-model [ESRGAN_PATH]      path to esrgan model. Upscale images after generate, just RealESRGAN_x4plus_anime_6B supported by now.\n");
+    // printf("  --upscale-repeats                  Run the ESRGAN upscaler this many times (default 1)\n");
     printf("  --type [TYPE]                      weight type (f32, f16, q4_0, q4_1, q5_0, q5_1, q8_0)\n");
     printf("                                     If not specified, the default is the type of the weight file.\n");
     printf("  --lora-model-dir [DIR]             lora model directory\n");
     printf("  -i, --init-img [IMAGE]             path to the input image, required by img2img\n");
-    printf("  --control-image [IMAGE]            path to image condition, control net\n");
+    // printf("  --control-image [IMAGE]            path to image condition, control net\n");
     printf("  -o, --output OUTPUT                path to write result image to (default: ./output.png)\n");
     printf("  -p, --prompt [PROMPT]              the prompt to render\n");
     printf("  -n, --negative-prompt PROMPT       the negative prompt (default: \"\")\n");
     printf("  --cfg-scale SCALE                  unconditional guidance scale: (default: 7.0)\n");
     printf("  --strength STRENGTH                strength for noising/unnoising (default: 0.75)\n");
-    printf("  --style-ratio STYLE-RATIO          strength for keeping input identity (default: 20%%)\n");
-    printf("  --control-strength STRENGTH        strength to apply Control Net (default: 0.9)\n");
-    printf("                                     1.0 corresponds to full destruction of information in init image\n");
+    // printf("  --style-ratio STYLE-RATIO          strength for keeping input identity (default: 20%%)\n");
+    // printf("  --control-strength STRENGTH        strength to apply Control Net (default: 0.9)\n");
+    // printf("                                     1.0 corresponds to full destruction of information in init image\n");
     printf("  -H, --height H                     image height, in pixel space (default: 512)\n");
     printf("  -W, --width W                      image width, in pixel space (default: 512)\n");
-    printf("  --sampling-method {euler, euler_a, heun, dpm2, dpm++2s_a, dpm++2m, dpm++2mv2, lcm}\n");
-    printf("                                     sampling method (default: \"euler_a\")\n");
+    // printf("  --sampling-method {euler, euler_a, heun, dpm2, dpm++2s_a, dpm++2m, dpm++2mv2, lcm}\n");
+    // printf("                                     sampling method (default: \"euler_a\")\n");
     printf("  --steps  STEPS                     number of sample steps (default: 20)\n");
-    printf("  --rng {std_default, cuda}          RNG (default: cuda)\n");
+    // printf("  --rng {std_default, cuda}          RNG (default: cuda)\n");
     printf("  -s SEED, --seed SEED               RNG seed (default: 42, use random seed for < 0)\n");
     printf("  -b, --batch-count COUNT            number of images to generate.\n");
-    printf("  --schedule {discrete, karras, ays} Denoiser sigma schedule (default: discrete)\n");
-    printf("  --clip-skip N                      ignore last layers of CLIP network; 1 ignores none, 2 ignores one layer (default: -1)\n");
-    printf("                                     <= 0 represents unspecified, will be 1 for SD1.x, 2 for SD2.x\n");
-    printf("  --vae-tiling                       process vae in tiles to reduce memory usage\n");
-    printf("  --control-net-cpu                  keep controlnet in cpu (for low vram)\n");
-    printf("  --canny                            apply canny preprocessor (edge detection)\n");
-    printf("  --color                            Colors the logging tags according to level\n");
+    // printf("  --schedule {discrete, karras, ays} Denoiser sigma schedule (default: discrete)\n");
+    // printf("  --clip-skip N                      ignore last layers of CLIP network; 1 ignores none, 2 ignores one layer (default: -1)\n");
+    // printf("                                     <= 0 represents unspecified, will be 1 for SD1.x, 2 for SD2.x\n");
+    // printf("  --vae-tiling                       process vae in tiles to reduce memory usage\n");
+    // printf("  --control-net-cpu                  keep controlnet in cpu (for low vram)\n");
+    // printf("  --canny                            apply canny preprocessor (edge detection)\n");
+    // printf("  --color                            Colors the logging tags according to level\n");
     printf("  -v, --verbose                      print extra info\n");
 }
 
