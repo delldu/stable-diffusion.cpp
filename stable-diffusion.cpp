@@ -9,10 +9,8 @@
 #include "clip.hpp"
 #include "control.hpp"
 #include "denoiser.hpp"
-#include "esrgan.hpp"
 #include "lora.hpp"
 #include "pmid.hpp"
-#include "tae.hpp"
 #include "unet.hpp"
 #include "vae.hpp"
 
