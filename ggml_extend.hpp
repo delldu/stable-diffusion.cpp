@@ -423,69 +423,6 @@ __STATIC_INLINE__ void ggml_tensor_scale_output(struct ggml_tensor* src) {
 
 typedef std::function<void(ggml_tensor*, ggml_tensor*, bool)> on_tile_process;
 
-// Tiling
-__STATIC_INLINE__ void sd_tiling(ggml_tensor* input, ggml_tensor* output, const int scale, const int tile_size, const float tile_overlap_factor, on_tile_process on_processing) {
-    int input_width   = (int)input->ne[0];
-    int input_height  = (int)input->ne[1];
-    int output_width  = (int)output->ne[0];
-    int output_height = (int)output->ne[1];
-    GGML_ASSERT(input_width % 2 == 0 && input_height % 2 == 0 && output_width % 2 == 0 && output_height % 2 == 0);  // should be multiple of 2
-
-    int tile_overlap     = (int32_t)(tile_size * tile_overlap_factor);
-    int non_tile_overlap = tile_size - tile_overlap;
-
-    struct ggml_init_params params = {};
-    params.mem_size += tile_size * tile_size * input->ne[2] * sizeof(float);                       // input chunk
-    params.mem_size += (tile_size * scale) * (tile_size * scale) * output->ne[2] * sizeof(float);  // output chunk
-    params.mem_size += 3 * ggml_tensor_overhead();
-    params.mem_buffer = NULL;
-    params.no_alloc   = false;
-
-    LOG_DEBUG("tile work buffer size: %.2f MB", params.mem_size / 1024.f / 1024.f);
-
-    // draft context
-    struct ggml_context* tiles_ctx = ggml_init(params);
-    if (!tiles_ctx) {
-        LOG_ERROR("ggml_init() failed");
-        return;
-    }
-
-    // tiling
-    ggml_tensor* input_tile  = ggml_new_tensor_4d(tiles_ctx, GGML_TYPE_F32, tile_size, tile_size, input->ne[2], 1);
-    ggml_tensor* output_tile = ggml_new_tensor_4d(tiles_ctx, GGML_TYPE_F32, tile_size * scale, tile_size * scale, output->ne[2], 1);
-    on_processing(input_tile, NULL, true);
-    int num_tiles = ceil((float)input_width / non_tile_overlap) * ceil((float)input_height / non_tile_overlap);
-    LOG_INFO("processing %i tiles", num_tiles);
-    pretty_progress(1, num_tiles, 0.0f);
-    int tile_count = 1;
-    bool last_y = false, last_x = false;
-    float last_time = 0.0f;
-    for (int y = 0; y < input_height && !last_y; y += non_tile_overlap) {
-        if (y + tile_size >= input_height) {
-            y      = input_height - tile_size;
-            last_y = true;
-        }
-        for (int x = 0; x < input_width && !last_x; x += non_tile_overlap) {
-            if (x + tile_size >= input_width) {
-                x      = input_width - tile_size;
-                last_x = true;
-            }
-            int64_t t1 = ggml_time_ms();
-            ggml_split_tensor_2d(input, input_tile, x, y);
-            on_processing(input_tile, output_tile, false);
-            ggml_merge_tensor_2d(output_tile, output, x * scale, y * scale, tile_overlap * scale);
-            int64_t t2 = ggml_time_ms();
-            last_time  = (t2 - t1) / 1000.0f;
-            pretty_progress(tile_count, num_tiles, last_time);
-            tile_count++;
-        }
-        last_x = false;
-    }
-    if (tile_count < num_tiles) {
-        pretty_progress(num_tiles, num_tiles, last_time);
-    }
-    ggml_free(tiles_ctx);
-}
 
 __STATIC_INLINE__ struct ggml_tensor* ggml_group_norm_32(struct ggml_context* ctx,
                                                          struct ggml_tensor* a) {
