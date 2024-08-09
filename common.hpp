@@ -79,11 +79,13 @@ protected:
                                        std::pair<int, int> kernel_size,
                                        std::pair<int, int> padding) {
         GGML_ASSERT(dims == 2 || dims == 3);
-        if (dims == 3) {
-            return std::shared_ptr<GGMLBlock>(new Conv3dnx1x1(in_channels, out_channels, kernel_size.first, 1, padding.first));
-        } else {
-            return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, {1, 1}, padding));
-        }
+        // if (dims == 3) {
+        //     return std::shared_ptr<GGMLBlock>(new Conv3dnx1x1(in_channels, out_channels, kernel_size.first, 1, padding.first));
+        // } else {
+        //     return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, {1, 1}, padding));
+        // }
+
+        return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, {1, 1}, padding));
     }
 
 public:
@@ -445,89 +447,5 @@ public:
         return x;
     }
 };
-
-#if 0 // VERSION_SVD
-class AlphaBlender : public GGMLBlock {
-protected:
-    void init_params(struct ggml_context* ctx, ggml_type wtype) {
-        params["mix_factor"] = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
-    }
-
-    float get_alpha() {
-        // image_only_indicator is always tensor([0.]) and since mix_factor.shape is [1,]
-        // so learned_with_images is same as learned
-        float alpha = ggml_backend_tensor_get_f32(params["mix_factor"]);
-        return sigmoid(alpha);
-    }
-
-public:
-    AlphaBlender() {
-        // merge_strategy is always learned_with_images
-        // for inference, we don't need to set alpha
-        // since mix_factor.shape is [1,], we don't need rearrange using  rearrange_pattern
-    }
-
-    struct ggml_tensor* forward(struct ggml_context* ctx,
-                                struct ggml_tensor* x_spatial,
-                                struct ggml_tensor* x_temporal) {
-        // image_only_indicator is always tensor([0.])
-        float alpha = get_alpha();
-        auto x      = ggml_add(ctx,
-                               ggml_scale(ctx, x_spatial, alpha),
-                               ggml_scale(ctx, x_temporal, 1.0f - alpha));
-        return x;
-    }
-};
-#endif
-
-#if 0 // VERSION_SVD
-class VideoResBlock : public ResBlock {
-public:
-    VideoResBlock(int channels,
-                  int emb_channels,
-                  int out_channels,
-                  std::pair<int, int> kernel_size = {3, 3},
-                  int64_t video_kernel_size       = 3,
-                  int dims                        = 2)  // always 2
-        : ResBlock(channels, emb_channels, out_channels, kernel_size, dims) {
-        blocks["time_stack"] = std::shared_ptr<GGMLBlock>(new ResBlock(out_channels, emb_channels, out_channels, kernel_size, 3, true));
-        blocks["time_mixer"] = std::shared_ptr<GGMLBlock>(new AlphaBlender());
-    }
-
-    struct ggml_tensor* forward(struct ggml_context* ctx,
-                                struct ggml_tensor* x,
-                                struct ggml_tensor* emb,
-                                int num_video_frames) {
-        // x: [N, channels, h, w] aka [b*t, channels, h, w]
-        // emb: [N, emb_channels] aka [b*t, emb_channels]
-        // image_only_indicator is always tensor([0.])
-        auto time_stack = std::dynamic_pointer_cast<ResBlock>(blocks["time_stack"]);
-        auto time_mixer = std::dynamic_pointer_cast<AlphaBlender>(blocks["time_mixer"]);
-
-        x = ResBlock::forward(ctx, x, emb);
-
-        int64_t T = num_video_frames;
-        int64_t B = x->ne[3] / T;
-        int64_t C = x->ne[2];
-        int64_t H = x->ne[1];
-        int64_t W = x->ne[0];
-
-        x          = ggml_reshape_4d(ctx, x, W * H, C, T, B);           // (b t) c h w -> b t c (h w)
-        x          = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));  // b t c (h w) -> b c t (h w)
-        auto x_mix = x;
-
-        emb = ggml_reshape_4d(ctx, emb, emb->ne[0], T, B, emb->ne[3]);  // (b t) ... -> b t ...
-
-        x = time_stack->forward(ctx, x, emb);  // b t c (h w)
-
-        x = time_mixer->forward(ctx, x_mix, x);  // b t c (h w)
-
-        x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));  // b c t (h w) -> b t c (h w)
-        x = ggml_reshape_4d(ctx, x, W, H, C, T * B);           // b t c (h w) -> (b t) c h w
-
-        return x;
-    }
-};
-#endif
 
 #endif  // __COMMON_HPP__

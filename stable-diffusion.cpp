@@ -86,8 +86,6 @@ public:
     // std::shared_ptr<PhotoMakerIDEncoder> pmid_model;
     // std::shared_ptr<LoraModel> pmid_lora;
 
-    std::string taesd_path;
-    bool use_tiny_autoencoder = false;
     bool vae_tiling           = false;
     bool stacked_id           = false;
 
@@ -135,16 +133,13 @@ public:
     bool load_from_file(const std::string& model_path,
                         const std::string& vae_path,
                         const std::string control_net_path,
-                        const std::string embeddings_path,
-                        const std::string id_embeddings_path,
-                        const std::string& taesd_path,
+                        // const std::string embeddings_path,
                         bool vae_tiling_,
                         ggml_type wtype,
                         schedule_t schedule,
                         bool clip_on_cpu,
                         bool control_net_cpu,
                         bool vae_on_cpu) {
-        use_tiny_autoencoder = taesd_path.size() > 0;
 #ifdef SD_USE_CUBLAS
         LOG_DEBUG("Using CUDA backend");
         backend = ggml_backend_cuda_init(0);
@@ -200,30 +195,9 @@ public:
 
         if (version == VERSION_XL) {
             scale_factor = 0.13025f;
-            if (vae_path.size() == 0 && taesd_path.size() == 0) {
-                LOG_WARN(
-                    "!!!It looks like you are using SDXL model. "
-                    "If you find that the generated images are completely black, "
-                    "try specifying SDXL VAE FP16 Fix with the --vae parameter. "
-                    "You can find it here: https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/blob/main/sdxl_vae.safetensors");
-            }
         }
 
         if (version == VERSION_SVD) {
-#if 0 // VERSION_SVD            
-            clip_vision = std::make_shared<FrozenCLIPVisionEmbedder>(backend, model_data_type);
-            clip_vision->alloc_params_buffer();
-            clip_vision->get_param_tensors(tensors, "cond_stage_model.");
-
-            diffusion_model = std::make_shared<UNetModel>(backend, model_data_type, version);
-            diffusion_model->alloc_params_buffer();
-            diffusion_model->get_param_tensors(tensors, "model.diffusion_model");
-
-            first_stage_model = std::make_shared<AutoEncoderKL>(backend, model_data_type, vae_decode_only, true);
-            LOG_DEBUG("vae_decode_only %d", vae_decode_only);
-            first_stage_model->alloc_params_buffer();
-            first_stage_model->get_param_tensors(tensors, "first_stage_model");
-#endif            
         } else {
             clip_backend = backend;
             if (clip_on_cpu && !ggml_backend_is_cpu(backend)) {
@@ -234,7 +208,7 @@ public:
             cond_stage_model->alloc_params_buffer();
             cond_stage_model->get_param_tensors(tensors, "cond_stage_model.");
 
-            cond_stage_model->embd_dir = embeddings_path;
+            // cond_stage_model->embd_dir = embeddings_path;
 
             diffusion_model = std::make_shared<UNetModel>(backend, model_data_type, version);
             diffusion_model->alloc_params_buffer();
@@ -245,21 +219,16 @@ public:
                 vae_type = GGML_TYPE_F32;  // avoid nan, not work...
             }
 
-            if (!use_tiny_autoencoder) {
-                if (vae_on_cpu && !ggml_backend_is_cpu(backend)) {
-                    LOG_INFO("VAE Autoencoder: Using CPU backend");
-                    vae_backend = ggml_backend_cpu_init();
-                } else {
-                    vae_backend = backend;
-                }
-                first_stage_model = std::make_shared<AutoEncoderKL>(vae_backend, vae_type, vae_decode_only);
-                first_stage_model->alloc_params_buffer();
-                first_stage_model->get_param_tensors(tensors, "first_stage_model");
+            if (vae_on_cpu && !ggml_backend_is_cpu(backend)) {
+                LOG_INFO("VAE Autoencoder: Using CPU backend");
+                vae_backend = ggml_backend_cpu_init();
             } else {
-                // tae_first_stage = std::make_shared<TinyAutoEncoder>(backend, model_data_type, vae_decode_only);
+                vae_backend = backend;
             }
-            // first_stage_model->get_param_tensors(tensors, "first_stage_model.");
-
+            first_stage_model = std::make_shared<AutoEncoderKL>(vae_backend, vae_type, vae_decode_only);
+            first_stage_model->alloc_params_buffer();
+            first_stage_model->get_param_tensors(tensors, "first_stage_model");
+       
             if (control_net_path.size() > 0) {
                 ggml_backend_t controlnet_backend = NULL;
                 if (control_net_cpu && !ggml_backend_is_cpu(backend)) {
@@ -271,31 +240,6 @@ public:
                 control_net = std::make_shared<ControlNet>(controlnet_backend, model_data_type, version);
             }
 
-#if 0 // stacked_id            
-            pmid_model = std::make_shared<PhotoMakerIDEncoder>(clip_backend, model_data_type, version);
-            if (id_embeddings_path.size() > 0) {
-                pmid_lora = std::make_shared<LoraModel>(backend, model_data_type, id_embeddings_path, "");
-                if (!pmid_lora->load_from_file(true)) {
-                    LOG_WARN("load photomaker lora tensors from %s failed", id_embeddings_path.c_str());
-                    return false;
-                }
-                LOG_INFO("loading stacked ID embedding (PHOTOMAKER) model file from '%s'", id_embeddings_path.c_str());
-                if (!model_loader.init_from_file(id_embeddings_path, "pmid.")) {
-                    LOG_WARN("loading stacked ID embedding from '%s' failed", id_embeddings_path.c_str());
-                } else {
-                    stacked_id = true;
-                }
-            }
-            if (stacked_id) {
-                if (!pmid_model->alloc_params_buffer()) {
-                    LOG_ERROR(" pmid model params buffer allocation failed");
-                    return false;
-                }
-                // LOG_INFO("pmid param memory buffer size = %.2fMB ",
-                //     pmid_model->params_buffer_size / 1024.0 / 1024.0);
-                pmid_model->get_param_tensors(tensors, "pmid");
-            }
-#endif
             LOG_DEBUG("loading vocab");
             std::string merges_utf8_str = model_loader.load_merges();
             if (merges_utf8_str.size() == 0) {
@@ -322,23 +266,12 @@ public:
 
         std::set<std::string> ignore_tensors;
         tensors["alphas_cumprod"] = alphas_cumprod_tensor;
-        if (use_tiny_autoencoder) {
-            ignore_tensors.insert("first_stage_model.");
-        }
-#if 0 // stacked_id        
-        if (stacked_id) {
-            ignore_tensors.insert("lora.");
-        }
-#endif
+
         if (vae_decode_only) {
             ignore_tensors.insert("first_stage_model.encoder");
             ignore_tensors.insert("first_stage_model.quant");
         }
-#if 0 // VERSION_SVD        
-        if (version == VERSION_SVD) {
-            ignore_tensors.insert("conditioner.embedders.3");
-        }
-#endif        
+
         bool success = model_loader.load_tensors(tensors, backend, ignore_tensors);
         if (!success) {
             LOG_ERROR("load tensors from model loader failed");
@@ -349,21 +282,11 @@ public:
         // LOG_DEBUG("model size = %.2fMB", total_size / 1024.0 / 1024.0);
 
         if (version == VERSION_SVD) {
-            // diffusion_model->test();
-            // first_stage_model->test();
-            // return false;
         } else {
             size_t clip_params_mem_size = cond_stage_model->get_params_buffer_size();
             size_t unet_params_mem_size = diffusion_model->get_params_buffer_size();
             size_t vae_params_mem_size  = 0;
-            if (!use_tiny_autoencoder) {
-                vae_params_mem_size = first_stage_model->get_params_buffer_size();
-            } else {
-                // if (!tae_first_stage->load_from_file(taesd_path)) {
-                //     return false;
-                // }
-                // vae_params_mem_size = tae_first_stage->get_params_buffer_size();
-            }
+            vae_params_mem_size = first_stage_model->get_params_buffer_size();
             size_t control_net_params_mem_size = 0;
             if (control_net) {
                 if (!control_net->load_from_file(control_net_path)) {
@@ -372,11 +295,7 @@ public:
                 control_net_params_mem_size = control_net->get_params_buffer_size();
             }
             size_t pmid_params_mem_size = 0;
-#if 0 // stacked_id            
-            if (stacked_id) {
-                pmid_params_mem_size = pmid_model->get_params_buffer_size();
-            }
-#endif
+
             size_t total_params_ram_size  = 0;
             size_t total_params_vram_size = 0;
             if (ggml_backend_is_cpu(clip_backend)) {
@@ -432,7 +351,6 @@ public:
                 is_using_v_parameterization = true;
             }
         } else if (version == VERSION_SVD) {
-            // TODO: V_PREDICTION_EDM
             is_using_v_parameterization = true;
         }
 
@@ -445,32 +363,6 @@ public:
             LOG_INFO("running in eps-prediction mode");
         }
 
-#if 0 //
-        CheckPoint("schedule = %d", schedule);
-        if (schedule != DEFAULT) {
-            switch (schedule) {
-                case DISCRETE:
-                    LOG_INFO("running with discrete schedule");
-                    denoiser->schedule = std::make_shared<DiscreteSchedule>();
-                    break;
-                case KARRAS:
-                    LOG_INFO("running with Karras schedule");
-                    denoiser->schedule = std::make_shared<KarrasSchedule>();
-                    break;
-                case AYS:
-                    LOG_INFO("Running with Align-Your-Steps schedule");
-                    denoiser->schedule          = std::make_shared<AYSSchedule>();
-                    denoiser->schedule->version = version;
-                    break;
-                case DEFAULT:
-                    // Don't touch anything.
-                    break;
-                default:
-                    LOG_ERROR("Unknown schedule %i", schedule);
-                    abort();
-            }
-        }
-#endif
         for (int i = 0; i < TIMESTEPS; i++) {
             denoiser->schedule->alphas_cumprod[i] = ((float*)alphas_cumprod_tensor->data)[i];
             denoiser->schedule->sigmas[i]         = std::sqrt((1 - denoiser->schedule->alphas_cumprod[i]) / denoiser->schedule->alphas_cumprod[i]);
@@ -1043,39 +935,26 @@ public:
         ggml_tensor* result = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32,
                                                  decode ? (W * 8) : (W / 8),  // width
                                                  decode ? (H * 8) : (H / 8),  // height
-                                                 decode ? 3 : (use_tiny_autoencoder ? 4 : 8),
+                                                 decode ? 3 : 8,
                                                  x->ne[3]);  // channels
         int64_t t0          = ggml_time_ms();
-        if (!use_tiny_autoencoder) {
-            if (decode) {
-                ggml_tensor_scale(x, 1.0f / scale_factor);
-            } else {
-                ggml_tensor_scale_input(x);
-            }
-            if (vae_tiling && decode) {  // TODO: support tiling vae encode
-                // split latent in 32x32 tiles and compute in several steps
-                auto on_tiling = [&](ggml_tensor* in, ggml_tensor* out, bool init) {
-                    first_stage_model->compute(n_threads, in, decode, &out);
-                };
-                sd_tiling(x, result, 8, 32, 0.5f, on_tiling);
-            } else {
-                first_stage_model->compute(n_threads, x, decode, &result);
-            }
-            first_stage_model->free_compute_buffer();
-            if (decode) {
-                ggml_tensor_scale_output(result);
-            }
+        if (decode) {
+            ggml_tensor_scale(x, 1.0f / scale_factor);
         } else {
-            // if (vae_tiling && decode) {  // TODO: support tiling vae encode
-            //     // split latent in 64x64 tiles and compute in several steps
-            //     auto on_tiling = [&](ggml_tensor* in, ggml_tensor* out, bool init) {
-            //         tae_first_stage->compute(n_threads, in, decode, &out);
-            //     };
-            //     sd_tiling(x, result, 8, 64, 0.5f, on_tiling);
-            // } else {
-            //     tae_first_stage->compute(n_threads, x, decode, &result);
-            // }
-            // tae_first_stage->free_compute_buffer();
+            ggml_tensor_scale_input(x);
+        }
+        if (vae_tiling && decode) {  // TODO: support tiling vae encode
+            // split latent in 32x32 tiles and compute in several steps
+            auto on_tiling = [&](ggml_tensor* in, ggml_tensor* out, bool init) {
+                first_stage_model->compute(n_threads, in, decode, &out);
+            };
+            sd_tiling(x, result, 8, 32, 0.5f, on_tiling);
+        } else {
+            first_stage_model->compute(n_threads, x, decode, &result);
+        }
+        first_stage_model->free_compute_buffer();
+        if (decode) {
+            ggml_tensor_scale_output(result);
         }
 
         int64_t t1 = ggml_time_ms();
@@ -1101,13 +980,12 @@ struct sd_ctx_t {
     StableDiffusionGGML* sd = NULL;
 };
 
+
+
 sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
                      const char* vae_path_c_str,
-                     const char* taesd_path_c_str,
                      const char* control_net_path_c_str,
                      const char* lora_model_dir_c_str,
-                     const char* embed_dir_c_str,
-                     const char* id_embed_dir_c_str,
                      bool vae_decode_only,
                      bool vae_tiling,
                      bool free_params_immediately,
@@ -1124,10 +1002,7 @@ sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
     }
     std::string model_path(model_path_c_str);
     std::string vae_path(vae_path_c_str);
-    std::string taesd_path(taesd_path_c_str);
     std::string control_net_path(control_net_path_c_str);
-    std::string embd_path(embed_dir_c_str);
-    std::string id_embd_path(id_embed_dir_c_str);
     std::string lora_model_dir(lora_model_dir_c_str);
 
     sd_ctx->sd = new StableDiffusionGGML(n_threads,
@@ -1142,9 +1017,6 @@ sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
     if (!sd_ctx->sd->load_from_file(model_path,
                                     vae_path,
                                     control_net_path,
-                                    embd_path,
-                                    id_embd_path,
-                                    taesd_path,
                                     vae_tiling,
                                     (ggml_type)wtype,
                                     s,
@@ -1418,7 +1290,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
 
     int64_t t4 = ggml_time_ms();
     LOG_INFO("decode_first_stage completed, taking %.2fs", (t4 - t3) * 1.0f / 1000);
-    if (sd_ctx->sd->free_params_immediately && !sd_ctx->sd->use_tiny_autoencoder) {
+    if (sd_ctx->sd->free_params_immediately) {
         sd_ctx->sd->first_stage_model->free_params_buffer();
     }
     sd_image_t* result_images = (sd_image_t*)calloc(batch_count, sizeof(sd_image_t));
@@ -1565,12 +1437,9 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
     ggml_tensor* init_img = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, width, height, 3, 1);
     sd_image_to_tensor(init_image.data, init_img);
     ggml_tensor* init_latent = NULL;
-    if (!sd_ctx->sd->use_tiny_autoencoder) {
-        ggml_tensor* moments = sd_ctx->sd->encode_first_stage(work_ctx, init_img);
-        init_latent          = sd_ctx->sd->get_first_stage_encoding(work_ctx, moments);
-    } else {
-        init_latent = sd_ctx->sd->encode_first_stage(work_ctx, init_img);
-    }
+    ggml_tensor* moments = sd_ctx->sd->encode_first_stage(work_ctx, init_img);
+    init_latent          = sd_ctx->sd->get_first_stage_encoding(work_ctx, moments);
+
     // print_ggml_tensor(init_latent);
     size_t t1 = ggml_time_ms();
     LOG_INFO("encode_first_stage completed, taking %.2fs", (t1 - t0) * 1.0f / 1000);
@@ -1580,25 +1449,6 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
     LOG_INFO("target t_enc is %zu steps", t_enc);
     std::vector<float> sigma_sched;
     sigma_sched.assign(sigmas.begin() + sample_steps - t_enc - 1, sigmas.end());
-
-    // sd_image_t* result_images = generate_image(sd_ctx,
-    //                                            work_ctx,
-    //                                            init_latent,
-    //                                            prompt_c_str,
-    //                                            negative_prompt_c_str,
-    //                                            clip_skip,
-    //                                            cfg_scale,
-    //                                            width,
-    //                                            height,
-    //                                            sample_method,
-    //                                            sigma_sched,
-    //                                            seed,
-    //                                            batch_count,
-    //                                            control_cond,
-    //                                            control_strength,
-    //                                            style_ratio,
-    //                                            normalize_input,
-    //                                            input_id_images_path_c_str);
 
     sd_image_t* result_images = generate_image(sd_ctx,
                                                work_ctx,

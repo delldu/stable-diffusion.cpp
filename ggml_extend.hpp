@@ -1111,50 +1111,6 @@ public:
     }
 };
 
-class Conv3dnx1x1 : public UnaryBlock {
-protected:
-    int64_t in_channels;
-    int64_t out_channels;
-    int64_t kernel_size;
-    int64_t stride;
-    int64_t padding;
-    int64_t dilation;
-    bool bias;
-
-    void init_params(struct ggml_context* ctx, ggml_type wtype) {
-        params["weight"] = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, 1, kernel_size, in_channels, out_channels);  // 5d => 4d
-        if (bias) {
-            params["bias"] = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
-        }
-    }
-
-public:
-    Conv3dnx1x1(int64_t in_channels,
-                int64_t out_channels,
-                int64_t kernel_size,
-                int64_t stride   = 1,
-                int64_t padding  = 0,
-                int64_t dilation = 1,
-                bool bias        = true)
-        : in_channels(in_channels),
-          out_channels(out_channels),
-          kernel_size(kernel_size),
-          stride(stride),
-          padding(padding),
-          dilation(dilation),
-          bias(bias) {}
-
-    // x: [N, IC, ID, IH*IW]
-    // result: [N, OC, OD, OH*OW]
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
-        struct ggml_tensor* w = params["weight"];
-        struct ggml_tensor* b = NULL;
-        if (bias) {
-            b = params["bias"];
-        }
-        return ggml_nn_conv_3d_nx1x1(ctx, x, w, b, stride, padding, dilation);
-    }
-};
 
 class LayerNorm : public UnaryBlock {
 protected:

@@ -38,20 +38,12 @@ enum rng_type_t {
 enum sample_method_t {
     EULER_A,
     EULER,
-    // HEUN,
-    // DPM2,
-    // DPMPP2S_A,
-    // DPMPP2M,
-    // DPMPP2Mv2,
-    // LCM,
     N_SAMPLE_METHODS
 };
 
 enum schedule_t {
     DEFAULT,
     DISCRETE,
-    // KARRAS,
-    // AYS,
     N_SCHEDULES
 };
 
@@ -119,11 +111,8 @@ typedef struct sd_ctx_t sd_ctx_t;
 
 SD_API sd_ctx_t* new_sd_ctx(const char* model_path,
                             const char* vae_path,
-                            const char* taesd_path,
                             const char* control_net_path_c_str,
                             const char* lora_model_dir,
-                            const char* embed_dir_c_str,
-                            const char* stacked_id_embed_dir_c_str,
                             bool vae_decode_only,
                             bool vae_tiling,
                             bool free_params_immediately,
@@ -151,8 +140,6 @@ SD_API sd_image_t* txt2img(sd_ctx_t* sd_ctx,
                            const sd_image_t* control_cond,
                            float control_strength,
                            float style_strength,
-                           // bool normalize_input,
-                           // const char* input_id_images_path);
                            bool normalize_input);
 
 SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,

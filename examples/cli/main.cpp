@@ -70,7 +70,6 @@ struct SDParams {
     std::string model_path;
     std::string vae_path;
 
-    std::string taesd_path;
     std::string esrgan_path;
     std::string controlnet_path;
     std::string embeddings_path;
@@ -123,7 +122,6 @@ void print_params(SDParams params) {
     printf("    model_path:        %s\n", params.model_path.c_str());
     printf("    wtype:             %s\n", params.wtype < SD_TYPE_COUNT ? sd_type_name(params.wtype) : "unspecified");
     printf("    vae_path:          %s\n", params.vae_path.c_str());
-    // printf("    taesd_path:        %s\n", params.taesd_path.c_str());
     // printf("    esrgan_path:       %s\n", params.esrgan_path.c_str());
     printf("    controlnet_path:   %s\n", params.controlnet_path.c_str());
     // printf("    embeddings_path:   %s\n", params.embeddings_path.c_str());
@@ -248,12 +246,6 @@ void parse_args(int argc, const char** argv, SDParams& params) {
                 break;
             }
             params.vae_path = argv[i];
-        // } else if (arg == "--taesd") {
-        //     if (++i >= argc) {
-        //         invalid_arg = true;
-        //         break;
-        //     }
-        //     params.taesd_path = argv[i];
         } else if (arg == "--control-net") {
             if (++i >= argc) {
                 invalid_arg = true;
@@ -719,11 +711,8 @@ int main(int argc, const char* argv[]) {
 
     sd_ctx_t* sd_ctx = new_sd_ctx(params.model_path.c_str(),
                                   params.vae_path.c_str(),
-                                  params.taesd_path.c_str(),
                                   params.controlnet_path.c_str(),
                                   params.lora_model_dir.c_str(),
-                                  params.embeddings_path.c_str(),
-                                  params.stacked_id_embeddings_path.c_str(),
                                   vae_decode_only,
                                   params.vae_tiling,
                                   true,
