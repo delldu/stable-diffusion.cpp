@@ -84,9 +84,7 @@ struct SDParams {
 
     std::string prompt;
     std::string negative_prompt;
-    float min_cfg     = 1.0f;
     float cfg_scale   = 7.0f;
-    float style_ratio = 20.f;
     int clip_skip     = -1;  // <= 0 represents unspecified
     int width         = 512;
     int height        = 512;
@@ -118,14 +116,12 @@ void print_params(SDParams params) {
     printf("    wtype:             %s\n", params.wtype < SD_TYPE_COUNT ? sd_type_name(params.wtype) : "unspecified");
     printf("    vae_path:          %s\n", params.vae_path.c_str());
     printf("    controlnet_path:   %s\n", params.controlnet_path.c_str());
-    printf("    style ratio:       %.2f\n", params.style_ratio);
     printf("    output_path:       %s\n", params.output_path.c_str());
     printf("    init_img:          %s\n", params.input_path.c_str());
     printf("    control_image:     %s\n", params.control_image_path.c_str());
     printf("    strength(control): %.2f\n", params.control_strength);
     printf("    prompt:            %s\n", params.prompt.c_str());
     printf("    negative_prompt:   %s\n", params.negative_prompt.c_str());
-    printf("    min_cfg:           %.2f\n", params.min_cfg);
     printf("    cfg_scale:         %.2f\n", params.cfg_scale);
     printf("    clip_skip:         %d\n", params.clip_skip);
     printf("    width:             %d\n", params.width);
@@ -312,12 +308,6 @@ void parse_args(int argc, const char** argv, SDParams& params) {
                 break;
             }
             params.strength = std::stof(argv[i]);
-        } else if (arg == "--style-ratio") {
-            if (++i >= argc) {
-                invalid_arg = true;
-                break;
-            }
-            params.style_ratio = std::stof(argv[i]);
         } else if (arg == "--control-strength") {
             if (++i >= argc) {
                 invalid_arg = true;
@@ -591,12 +581,9 @@ int main(int argc, const char* argv[]) {
         return 1;
     }
 
-    bool vae_decode_only          = true;
     uint8_t* input_image_buffer   = NULL;
     uint8_t* control_image_buffer = NULL;
     if (params.mode == IMG2IMG || params.mode == IMG2VID) {
-        vae_decode_only = false;
-
         int c              = 0;
         int width          = 0;
         int height         = 0;
@@ -650,7 +637,6 @@ int main(int argc, const char* argv[]) {
                                   params.vae_path.c_str(),
                                   params.controlnet_path.c_str(),
                                   params.lora_model_dir.c_str(),
-                                  vae_decode_only,
                                   true,
                                   params.n_threads,
                                   params.wtype,
@@ -700,8 +686,7 @@ int main(int argc, const char* argv[]) {
                           params.seed,
                           params.batch_count,
                           control_image,
-                          params.control_strength,
-                          params.style_ratio);
+                          params.control_strength);
 
     } else {
         sd_image_t input_image = {(uint32_t)params.width,
@@ -709,60 +694,21 @@ int main(int argc, const char* argv[]) {
                                   3,
                                   input_image_buffer};
 
-        if (params.mode == IMG2VID) {
-            // results = img2vid(sd_ctx,
-            //                   input_image,
-            //                   params.width,
-            //                   params.height,
-            //                   params.video_frames,
-            //                   params.motion_bucket_id,
-            //                   params.fps,
-            //                   params.augmentation_level,
-            //                   params.min_cfg,
-            //                   params.cfg_scale,
-            //                   params.sample_method,
-            //                   params.sample_steps,
-            //                   params.strength,
-            //                   params.seed);
-            // if (results == NULL) {
-            //     printf("generate failed\n");
-            //     free_sd_ctx(sd_ctx);
-            //     return 1;
-            // }
-            // size_t last            = params.output_path.find_last_of(".");
-            // std::string dummy_name = last != std::string::npos ? params.output_path.substr(0, last) : params.output_path;
-            // for (int i = 0; i < params.video_frames; i++) {
-            //     if (results[i].data == NULL) {
-            //         continue;
-            //     }
-            //     std::string final_image_path = i > 0 ? dummy_name + "_" + std::to_string(i + 1) + ".png" : dummy_name + ".png";
-            //     stbi_write_png(final_image_path.c_str(), results[i].width, results[i].height, results[i].channel,
-            //                    results[i].data, 0, get_image_params(params, params.seed + i).c_str());
-            //     printf("save result image to '%s'\n", final_image_path.c_str());
-            //     free(results[i].data);
-            //     results[i].data = NULL;
-            // }
-            // free(results);
-            // free_sd_ctx(sd_ctx);
-            return 0;
-        } else {
-            results = img2img(sd_ctx,
-                              input_image,
-                              params.prompt.c_str(),
-                              params.negative_prompt.c_str(),
-                              params.clip_skip,
-                              params.cfg_scale,
-                              params.width,
-                              params.height,
-                              params.sample_method,
-                              params.sample_steps,
-                              params.strength,
-                              params.seed,
-                              params.batch_count,
-                              control_image,
-                              params.control_strength,
-                              params.style_ratio);
-        }
+        results = img2img(sd_ctx,
+                          input_image,
+                          params.prompt.c_str(),
+                          params.negative_prompt.c_str(),
+                          params.clip_skip,
+                          params.cfg_scale,
+                          params.width,
+                          params.height,
+                          params.sample_method,
+                          params.sample_steps,
+                          params.strength,
+                          params.seed,
+                          params.batch_count,
+                          control_image,
+                          params.control_strength);
     }
 
     if (results == NULL) {
@@ -770,34 +716,6 @@ int main(int argc, const char* argv[]) {
         free_sd_ctx(sd_ctx);
         return 1;
     }
-
-    // int upscale_factor = 4;  // unused for RealESRGAN_x4plus_anime_6B.pth
-    // if (params.esrgan_path.size() > 0 && params.upscale_repeats > 0) {
-    //     upscaler_ctx_t* upscaler_ctx = new_upscaler_ctx(params.esrgan_path.c_str(),
-    //                                                     params.n_threads,
-    //                                                     params.wtype);
-
-    //     if (upscaler_ctx == NULL) {
-    //         printf("new_upscaler_ctx failed\n");
-    //     } else {
-    //         for (int i = 0; i < params.batch_count; i++) {
-    //             if (results[i].data == NULL) {
-    //                 continue;
-    //             }
-    //             sd_image_t current_image = results[i];
-    //             for (int u = 0; u < params.upscale_repeats; ++u) {
-    //                 sd_image_t upscaled_image = upscale(upscaler_ctx, current_image, upscale_factor);
-    //                 if (upscaled_image.data == NULL) {
-    //                     printf("upscale failed\n");
-    //                     break;
-    //                 }
-    //                 free(current_image.data);
-    //                 current_image = upscaled_image;
-    //             }
-    //             results[i] = current_image;  // Set the final upscaled image as the result
-    //         }
-    //     }
-    // }
 
     size_t last            = params.output_path.find_last_of(".");
     std::string dummy_name = last != std::string::npos ? params.output_path.substr(0, last) : params.output_path;
