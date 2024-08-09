@@ -29,6 +29,7 @@ extern "C" {
 #include <string.h>
 
 #define CheckPoint(fmt, arg...) printf("==> CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
+#define NeverPoint(fmt, arg...) do { printf("==> NeverPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg); exit(0); } while(0)
 
 enum rng_type_t {
     STD_DEFAULT_RNG,

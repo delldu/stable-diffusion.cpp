@@ -120,6 +120,7 @@ public:
     CLIPTokenizer(SDVersion version = VERSION_1_x)
         : version(version) {}
 
+    // xxxx_debug
     void load_from_merges(const std::string& merges_utf8_str) {
         auto byte_unicode_pairs = bytes_to_unicode();
         // printf("byte_unicode_pairs have %lu pairs \n", byte_unicode_pairs.size());
@@ -184,15 +185,15 @@ public:
         bpe_len = rank;
     };
 
-    void add_token(const std::string& text) {
-        std::u32string token = utf8_to_utf32(text);
-        auto it              = encoder.find(token);
-        if (it != encoder.end()) {
-            encoder[token]       = encoder_len;
-            decoder[encoder_len] = token;
-            encoder_len++;
-        }
-    }
+    // void add_token(const std::string& text) {
+    //     std::u32string token = utf8_to_utf32(text);
+    //     auto it              = encoder.find(token);
+    //     if (it != encoder.end()) {
+    //         encoder[token]       = encoder_len;
+    //         decoder[encoder_len] = token;
+    //         encoder_len++;
+    //     }
+    // }
 
     std::u32string bpe(const std::u32string& token) {
         std::vector<std::u32string> word;
@@ -269,6 +270,7 @@ public:
         return result;
     }
 
+    // xxxx_debug
     std::vector<int> tokenize(std::string text,
                               on_new_token_cb_t on_new_token_cb,
                               size_t max_length = 0,
@@ -276,7 +278,10 @@ public:
         std::vector<int32_t> tokens = encode(text, on_new_token_cb);
 
         tokens.insert(tokens.begin(), BOS_TOKEN_ID);
+        CheckPoint("max_length = %ld", max_length);
+
         if (max_length > 0) {
+            NeverPoint("max_length > 0");
             if (tokens.size() > max_length - 1) {
                 tokens.resize(max_length - 1);
                 tokens.push_back(EOS_TOKEN_ID);
@@ -311,6 +316,7 @@ public:
         while (std::regex_search(str, matches, pat)) {
             bool skip = on_new_token_cb(str, bpe_tokens);
             if (skip) {
+                NeverPoint("skip ...");
                 continue;
             }
             for (auto& token : matches) {
@@ -342,8 +348,6 @@ public:
             ss << "\"" << token << "\", ";
         }
         ss << "]";
-        // LOG_DEBUG("split prompt \"%s\" to tokens %s", original_text.c_str(), ss.str().c_str());
-        // printf("split prompt \"%s\" to tokens %s \n", original_text.c_str(), ss.str().c_str());
         return bpe_tokens;
     }
 };
@@ -624,6 +628,7 @@ public:
         blocks["final_layer_norm"] = std::shared_ptr<GGMLBlock>(new LayerNorm(hidden_size));
     }
 
+    // xxxx_debug
     void set_clip_skip(int skip) {
         if (skip <= 0) {
             return;
@@ -671,7 +676,6 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
     CLIPTextModel text_model;
     CLIPTextModel text_model2;
 
-    // std::string embd_dir;
     int32_t num_custom_embeddings = 0;
     std::vector<uint8_t> token_embed_custom;
     std::vector<std::string> readed_embeddings;
@@ -714,6 +718,7 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
         }
     }
 
+    // xxxx_debug
     void get_param_tensors(std::map<std::string, struct ggml_tensor*>& tensors, const std::string prefix) {
         text_model.get_param_tensors(tensors, prefix + "transformer.text_model");
         if (version == VERSION_XL) {
@@ -848,6 +853,7 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
         return gf;
     }
 
+    // xxxx_debug
     void compute(const int n_threads,
                  struct ggml_tensor* input_ids,
                  struct ggml_tensor* input_ids2,
@@ -861,6 +867,7 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
         GGMLModule::compute(get_graph, n_threads, true, output, output_ctx);
     }
 
+    // xxxx_debug
     std::pair<std::vector<int>, std::vector<float>> tokenize(std::string text,
                                                              bool padding = false) {
         return tokenize(text, text_model.n_token, padding);
@@ -936,23 +943,6 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
             size_t word_end       = str.find(",");
             std::string embd_name = word_end == std::string::npos ? str : str.substr(0, word_end);
             embd_name             = trim(embd_name);
-            // std::string embd_path = get_full_path(embd_dir, embd_name + ".pt");
-            // if (embd_path.size() == 0) {
-            //     embd_path = get_full_path(embd_dir, embd_name + ".ckpt");
-            // }
-            // if (embd_path.size() == 0) {
-            //     embd_path = get_full_path(embd_dir, embd_name + ".safetensors");
-            // }
-            // if (embd_path.size() > 0) {
-            //     if (load_embedding(embd_name, embd_path, bpe_tokens)) {
-            //         if (word_end != std::string::npos) {
-            //             str = str.substr(word_end);
-            //         } else {
-            //             str = "";
-            //         }
-            //         return true;
-            //     }
-            // }
             return false;
         };
 

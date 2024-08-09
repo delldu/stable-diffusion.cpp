@@ -92,16 +92,7 @@ struct CompVisDenoiser : public Denoiser {
     }
 };
 
-struct CompVisVDenoiser : public Denoiser {
-    float sigma_data = 1.0f;
 
-    std::vector<float> get_scalings(float sigma) {
-        float c_skip = sigma_data * sigma_data / (sigma * sigma + sigma_data * sigma_data);
-        float c_out  = -sigma * sigma_data / std::sqrt(sigma * sigma + sigma_data * sigma_data);
-        float c_in   = 1.0f / std::sqrt(sigma * sigma + sigma_data * sigma_data);
-        return {c_skip, c_out, c_in};
-    }
-};
 
 typedef std::function<ggml_tensor*(ggml_tensor*, float, int)> denoise_cb_t;
 
@@ -154,9 +145,7 @@ static void sample_k_diffusion(sample_method_t method,
                 }
 
                 if (sigmas[i + 1] > 0) {
-                    // x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
                     ggml_tensor_set_f32_randn(noise, rng);
-                    // noise = load_tensor_from_file(work_ctx, "./rand" + std::to_string(i+1) + ".bin");
                     {
                         float* vec_x     = (float*)x->data;
                         float* vec_noise = (float*)noise->data;

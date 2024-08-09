@@ -822,6 +822,7 @@ public:
         return true;
     }
 
+    // xxxx_debug
     void free_params_buffer() {
         if (params_buffer != NULL) {
             ggml_backend_buffer_free(params_buffer);
@@ -829,6 +830,7 @@ public:
         }
     }
 
+    // xxxx_debug
     size_t get_params_buffer_size() {
         if (params_buffer != NULL) {
             return ggml_backend_buffer_get_size(params_buffer);

@@ -174,8 +174,7 @@ public:
     struct ggml_tensor* resblock_forward(std::string name,
                                          struct ggml_context* ctx,
                                          struct ggml_tensor* x,
-                                         struct ggml_tensor* emb,
-                                         int num_video_frames) {
+                                         struct ggml_tensor* emb) {
         auto block = std::dynamic_pointer_cast<ResBlock>(blocks[name]);
         return block->forward(ctx, x, emb);
     }
@@ -183,8 +182,7 @@ public:
     struct ggml_tensor* attention_layer_forward(std::string name,
                                                 struct ggml_context* ctx,
                                                 struct ggml_tensor* x,
-                                                struct ggml_tensor* context,
-                                                int timesteps) {
+                                                struct ggml_tensor* context) {
         auto block = std::dynamic_pointer_cast<SpatialTransformer>(blocks[name]);
         return block->forward(ctx, x, context);
     }
@@ -193,28 +191,13 @@ public:
                                 struct ggml_tensor* x,
                                 struct ggml_tensor* timesteps,
                                 struct ggml_tensor* context,
-                                struct ggml_tensor* c_concat              = NULL,
                                 struct ggml_tensor* y                     = NULL,
-                                int num_video_frames                      = -1,
                                 std::vector<struct ggml_tensor*> controls = {},
                                 float control_strength                    = 0.f) {
-        // x: [N, in_channels, h, w] or [N, in_channels/2, h, w]
-        // timesteps: [N,]
-        // context: [N, max_position, hidden_size] or [1, max_position, hidden_size]. for example, [N, 77, 768]
-        // c_concat: [N, in_channels, h, w] or [1, in_channels, h, w]
-        // y: [N, adm_in_channels] or [1, adm_in_channels]
-        // return: [N, out_channels, h, w]
         if (context != NULL) {
             if (context->ne[2] != x->ne[3]) {
                 context = ggml_repeat(ctx, context, ggml_new_tensor_3d(ctx, GGML_TYPE_F32, context->ne[0], context->ne[1], x->ne[3]));
             }
-        }
-
-        if (c_concat != NULL) {
-            if (c_concat->ne[3] != x->ne[3]) {
-                c_concat = ggml_repeat(ctx, c_concat, x);
-            }
-            x = ggml_concat(ctx, x, c_concat, 2);
         }
 
         if (y != NULL) {
@@ -265,10 +248,10 @@ public:
             for (int j = 0; j < num_res_blocks; j++) {
                 input_block_idx += 1;
                 std::string name = "input_blocks." + std::to_string(input_block_idx) + ".0";
-                h                = resblock_forward(name, ctx, h, emb, num_video_frames);  // [N, mult*model_channels, h, w]
+                h                = resblock_forward(name, ctx, h, emb);  // [N, mult*model_channels, h, w]
                 if (std::find(attention_resolutions.begin(), attention_resolutions.end(), ds) != attention_resolutions.end()) {
                     std::string name = "input_blocks." + std::to_string(input_block_idx) + ".1";
-                    h                = attention_layer_forward(name, ctx, h, context, num_video_frames);  // [N, mult*model_channels, h, w]
+                    h                = attention_layer_forward(name, ctx, h, context);  // [N, mult*model_channels, h, w]
                 }
                 hs.push_back(h);
             }
@@ -286,9 +269,9 @@ public:
         // [N, 4*model_channels, h/8, w/8]
 
         // middle_block
-        h = resblock_forward("middle_block.0", ctx, h, emb, num_video_frames);             // [N, 4*model_channels, h/8, w/8]
-        h = attention_layer_forward("middle_block.1", ctx, h, context, num_video_frames);  // [N, 4*model_channels, h/8, w/8]
-        h = resblock_forward("middle_block.2", ctx, h, emb, num_video_frames);             // [N, 4*model_channels, h/8, w/8]
+        h = resblock_forward("middle_block.0", ctx, h, emb);             // [N, 4*model_channels, h/8, w/8]
+        h = attention_layer_forward("middle_block.1", ctx, h, context);  // [N, 4*model_channels, h/8, w/8]
+        h = resblock_forward("middle_block.2", ctx, h, emb);             // [N, 4*model_channels, h/8, w/8]
 
         if (controls.size() > 0) {
             auto cs = ggml_scale_inplace(ctx, controls[controls.size() - 1], control_strength);
@@ -313,13 +296,13 @@ public:
 
                 std::string name = "output_blocks." + std::to_string(output_block_idx) + ".0";
 
-                h = resblock_forward(name, ctx, h, emb, num_video_frames);
+                h = resblock_forward(name, ctx, h, emb);
 
                 int up_sample_idx = 1;
                 if (std::find(attention_resolutions.begin(), attention_resolutions.end(), ds) != attention_resolutions.end()) {
                     std::string name = "output_blocks." + std::to_string(output_block_idx) + ".1";
 
-                    h = attention_layer_forward(name, ctx, h, context, num_video_frames);
+                    h = attention_layer_forward(name, ctx, h, context);
 
                     up_sample_idx++;
                 }
@@ -368,16 +351,10 @@ struct UNetModel : public GGMLModule {
     struct ggml_cgraph* build_graph(struct ggml_tensor* x,
                                     struct ggml_tensor* timesteps,
                                     struct ggml_tensor* context,
-                                    struct ggml_tensor* c_concat              = NULL,
                                     struct ggml_tensor* y                     = NULL,
-                                    int num_video_frames                      = -1,
                                     std::vector<struct ggml_tensor*> controls = {},
                                     float control_strength                    = 0.f) {
         struct ggml_cgraph* gf = ggml_new_graph_custom(compute_ctx, UNET_GRAPH_SIZE, false);
-
-        if (num_video_frames == -1) {
-            num_video_frames = x->ne[3];
-        }
 
         x         = to_backend(x);
         context   = to_backend(context);
@@ -392,9 +369,7 @@ struct UNetModel : public GGMLModule {
                                                x,
                                                timesteps,
                                                context,
-                                               c_concat,
                                                y,
-                                               num_video_frames,
                                                controls,
                                                control_strength);
 
@@ -407,65 +382,18 @@ struct UNetModel : public GGMLModule {
                  struct ggml_tensor* x,
                  struct ggml_tensor* timesteps,
                  struct ggml_tensor* context,
-                 struct ggml_tensor* c_concat,
+                 // struct ggml_tensor* c_concat,
                  struct ggml_tensor* y,
-                 int num_video_frames                      = -1,
                  std::vector<struct ggml_tensor*> controls = {},
                  float control_strength                    = 0.f,
                  struct ggml_tensor** output               = NULL,
                  struct ggml_context* output_ctx           = NULL) {
-        // x: [N, in_channels, h, w]
-        // timesteps: [N, ]
-        // context: [N, max_position, hidden_size]([N, 77, 768]) or [1, max_position, hidden_size]
-        // c_concat: [N, in_channels, h, w] or [1, in_channels, h, w]
-        // y: [N, adm_in_channels] or [1, adm_in_channels]
         auto get_graph = [&]() -> struct ggml_cgraph* {
-            return build_graph(x, timesteps, context, c_concat, y, num_video_frames, controls, control_strength);
+            return build_graph(x, timesteps, context, y, controls, control_strength);
         };
 
         GGMLModule::compute(get_graph, n_threads, false, output, output_ctx);
     }
-
-    void test() {
-        struct ggml_init_params params;
-        params.mem_size   = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
-        params.mem_buffer = NULL;
-        params.no_alloc   = false;
-
-        struct ggml_context* work_ctx = ggml_init(params);
-        GGML_ASSERT(work_ctx != NULL);
-
-        {
-            // CPU, num_video_frames = 1, x{num_video_frames, 8, 8, 8}: Pass
-            // CUDA, num_video_frames = 1, x{num_video_frames, 8, 8, 8}: Pass
-            // CPU, num_video_frames = 3, x{num_video_frames, 8, 8, 8}: Wrong result
-            // CUDA, num_video_frames = 3, x{num_video_frames, 8, 8, 8}: nan
-            int num_video_frames = 3;
-
-            auto x = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 8, 8, 8, num_video_frames);
-            std::vector<float> timesteps_vec(num_video_frames, 999.f);
-            auto timesteps = vector_to_ggml_tensor(work_ctx, timesteps_vec);
-            ggml_set_f32(x, 0.5f);
-            // print_ggml_tensor(x);
-
-            auto context = ggml_new_tensor_3d(work_ctx, GGML_TYPE_F32, 1024, 1, num_video_frames);
-            ggml_set_f32(context, 0.5f);
-            // print_ggml_tensor(context);
-
-            auto y = ggml_new_tensor_2d(work_ctx, GGML_TYPE_F32, 768, num_video_frames);
-            ggml_set_f32(y, 0.5f);
-            // print_ggml_tensor(y);
-
-            struct ggml_tensor* out = NULL;
-
-            int t0 = ggml_time_ms();
-            compute(8, x, timesteps, context, NULL, y, num_video_frames, {}, 0.f, &out, work_ctx);
-            int t1 = ggml_time_ms();
-
-            print_ggml_tensor(out);
-            LOG_DEBUG("unet test done in %dms", t1 - t0);
-        }
-    };
 };
 
 #endif  // __UNET_HPP__

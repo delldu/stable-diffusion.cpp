@@ -329,7 +329,6 @@ public:
 class AutoencodingEngine : public GGMLBlock {
 protected:
     bool decode_only       = true;
-    bool use_video_decoder = false;
     int embed_dim          = 4;
     struct {
         int z_channels           = 4;
@@ -343,20 +342,16 @@ protected:
     } dd_config;
 
 public:
-    AutoencodingEngine(bool decode_only       = true,
-                       bool use_video_decoder = false)
-        : decode_only(decode_only), use_video_decoder(use_video_decoder) {
+    AutoencodingEngine(bool decode_only       = true)
+        : decode_only(decode_only) {
         blocks["decoder"] = std::shared_ptr<GGMLBlock>(new Decoder(dd_config.ch,
                                                                    dd_config.out_ch,
                                                                    dd_config.ch_mult,
                                                                    dd_config.num_res_blocks,
-                                                                   dd_config.z_channels,
-                                                                   use_video_decoder));
-        if (!use_video_decoder) {
-            blocks["post_quant_conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(dd_config.z_channels,
-                                                                              embed_dim,
-                                                                              {1, 1}));
-        }
+                                                                   dd_config.z_channels));
+        blocks["post_quant_conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(dd_config.z_channels,
+                                                                          embed_dim,
+                                                                          {1, 1}));
         if (!decode_only) {
             blocks["encoder"] = std::shared_ptr<GGMLBlock>(new Encoder(dd_config.ch,
                                                                        dd_config.ch_mult,
@@ -364,22 +359,18 @@ public:
                                                                        dd_config.in_channels,
                                                                        dd_config.z_channels,
                                                                        dd_config.double_z));
-            if (!use_video_decoder) {
-                int factor = dd_config.double_z ? 2 : 1;
+            int factor = dd_config.double_z ? 2 : 1;
 
-                blocks["quant_conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(embed_dim * factor,
-                                                                             dd_config.z_channels * factor,
-                                                                             {1, 1}));
-            }
+            blocks["quant_conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(embed_dim * factor,
+                                                                         dd_config.z_channels * factor,
+                                                                         {1, 1}));
         }
     }
 
     struct ggml_tensor* decode(struct ggml_context* ctx, struct ggml_tensor* z) {
         // z: [N, z_channels, h, w]
-        if (!use_video_decoder) {
-            auto post_quant_conv = std::dynamic_pointer_cast<Conv2d>(blocks["post_quant_conv"]);
-            z                    = post_quant_conv->forward(ctx, z);  // [N, z_channels, h, w]
-        }
+        auto post_quant_conv = std::dynamic_pointer_cast<Conv2d>(blocks["post_quant_conv"]);
+        z                    = post_quant_conv->forward(ctx, z);  // [N, z_channels, h, w]
         auto decoder = std::dynamic_pointer_cast<Decoder>(blocks["decoder"]);
 
         ggml_set_name(z, "bench-start");
@@ -393,10 +384,8 @@ public:
         auto encoder = std::dynamic_pointer_cast<Encoder>(blocks["encoder"]);
 
         auto h = encoder->forward(ctx, x);  // [N, 2*z_channels, h/8, w/8]
-        if (!use_video_decoder) {
-            auto quant_conv = std::dynamic_pointer_cast<Conv2d>(blocks["quant_conv"]);
-            h               = quant_conv->forward(ctx, h);  // [N, 2*embed_dim, h/8, w/8]
-        }
+        auto quant_conv = std::dynamic_pointer_cast<Conv2d>(blocks["quant_conv"]);
+        h               = quant_conv->forward(ctx, h);  // [N, 2*embed_dim, h/8, w/8]
         return h;
     }
 };
@@ -407,9 +396,8 @@ struct AutoEncoderKL : public GGMLModule {
 
     AutoEncoderKL(ggml_backend_t backend,
                   ggml_type wtype,
-                  bool decode_only       = false,
-                  bool use_video_decoder = false)
-        : decode_only(decode_only), ae(decode_only, use_video_decoder), GGMLModule(backend, wtype) {
+                  bool decode_only       = false)
+        : decode_only(decode_only), ae(decode_only), GGMLModule(backend, wtype) {
         ae.init(params_ctx, wtype);
     }
 
