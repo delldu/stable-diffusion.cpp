@@ -2,11 +2,11 @@
 	--model models/sdxl_turbo_q8_0.gguf \
 	--height 1024 --width 1024 \
 	--init-img "images/4guys.png" \
-	--prompt "4 guys" \
+	--prompt "4 guys standing in back of sea, sunset, four person face to camera !!!" \
 	--negative-prompt "black and white" \
-	--strength 0.20 \
+	--strength 0.15 \
 	--cfg-scale 1.8 \
-	--steps 5 \
+	--steps 5 --seed -1 \
 	-o /tmp/output.png
 
 

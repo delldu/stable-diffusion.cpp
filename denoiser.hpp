@@ -76,6 +76,7 @@ struct DiscreteSchedule : SigmaSchedule {
     }
 };
 
+#if 0
 /*
 https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/howto.html
 */
@@ -190,10 +191,12 @@ struct AYSSchedule : SigmaSchedule {
                 LOG_INFO("AYS using SDXL noise levels");
                 inputs = noise_levels[1];
                 break;
+#if 0 // VERSION_SVD               
             case VERSION_SVD:
                 LOG_INFO("AYS using SVD noise levels");
                 inputs = noise_levels[2];
                 break;
+#endif                
             default:
                 LOG_ERROR("Version not compatable with AYS scheduler");
                 return results;
@@ -234,6 +237,7 @@ struct KarrasSchedule : SigmaSchedule {
         return result;
     }
 };
+#endif
 
 struct Denoiser {
     std::shared_ptr<SigmaSchedule> schedule              = std::make_shared<DiscreteSchedule>();
@@ -359,6 +363,7 @@ static void sample_k_diffusion(sample_method_t method,
                 }
             }
         } break;
+#if 0        
         case HEUN: {
             struct ggml_tensor* d  = ggml_dup_tensor(work_ctx, x);
             struct ggml_tensor* x2 = ggml_dup_tensor(work_ctx, x);
@@ -651,6 +656,7 @@ static void sample_k_diffusion(sample_method_t method,
                 }
             }
         } break;
+#endif        
 
         default:
             LOG_ERROR("Attempting to sample with nonexisting sample method %i", method);

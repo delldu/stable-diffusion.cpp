@@ -46,14 +46,15 @@ public:
             num_head_channels     = 64;
             num_heads             = -1;
         } else if (version == VERSION_SVD) {
+#if 0 // VERSION_SVD           
             in_channels       = 8;
             out_channels      = 4;
             context_dim       = 1024;
             adm_in_channels   = 768;
             num_head_channels = 64;
             num_heads         = -1;
+#endif
         }
-
         blocks["time_embed.0"] = std::shared_ptr<GGMLBlock>(new Linear(model_channels, time_embed_dim));
         // time_embed_1 is nn.SiLU()
         blocks["time_embed.2"] = std::shared_ptr<GGMLBlock>(new Linear(time_embed_dim, time_embed_dim));

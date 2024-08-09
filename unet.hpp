@@ -9,6 +9,7 @@
 
 #define UNET_GRAPH_SIZE 10240
 
+#if 0 // VERSION_SVD
 class SpatialVideoTransformer : public SpatialTransformer {
 protected:
     int64_t time_depth;
@@ -162,6 +163,7 @@ public:
         return x;
     }
 };
+#endif
 
 // ldm.modules.diffusionmodules.openaimodel.UNetModel
 class UnetModelBlock : public GGMLBlock {
@@ -227,11 +229,15 @@ public:
         int ds              = 1;
 
         auto get_resblock = [&](int64_t channels, int64_t emb_channels, int64_t out_channels) -> ResBlock* {
+#if 0 // VERSION_SVD            
             if (version == VERSION_SVD) {
                 return new VideoResBlock(channels, emb_channels, out_channels);
             } else {
                 return new ResBlock(channels, emb_channels, out_channels);
             }
+#else
+            return new ResBlock(channels, emb_channels, out_channels);
+#endif            
         };
 
         auto get_attention_layer = [&](int64_t in_channels,
@@ -239,11 +245,15 @@ public:
                                        int64_t d_head,
                                        int64_t depth,
                                        int64_t context_dim) -> SpatialTransformer* {
+#if 0 // VERSION_SVD            
             if (version == VERSION_SVD) {
                 return new SpatialVideoTransformer(in_channels, n_head, d_head, depth, context_dim);
             } else {
                 return new SpatialTransformer(in_channels, n_head, d_head, depth, context_dim);
             }
+#else
+            return new SpatialTransformer(in_channels, n_head, d_head, depth, context_dim);
+#endif            
         };
 
         size_t len_mults = channel_mult.size();
@@ -344,6 +354,7 @@ public:
                                          struct ggml_tensor* x,
                                          struct ggml_tensor* emb,
                                          int num_video_frames) {
+#if 0 // VERSION_SVD        
         if (version == VERSION_SVD) {
             auto block = std::dynamic_pointer_cast<VideoResBlock>(blocks[name]);
 
@@ -353,6 +364,11 @@ public:
 
             return block->forward(ctx, x, emb);
         }
+#else
+        auto block = std::dynamic_pointer_cast<ResBlock>(blocks[name]);
+
+        return block->forward(ctx, x, emb);
+#endif        
     }
 
     struct ggml_tensor* attention_layer_forward(std::string name,
@@ -360,6 +376,7 @@ public:
                                                 struct ggml_tensor* x,
                                                 struct ggml_tensor* context,
                                                 int timesteps) {
+#if 0 // VERSION_SVD         
         if (version == VERSION_SVD) {
             auto block = std::dynamic_pointer_cast<SpatialVideoTransformer>(blocks[name]);
 
@@ -369,6 +386,11 @@ public:
 
             return block->forward(ctx, x, context);
         }
+#else
+        auto block = std::dynamic_pointer_cast<SpatialTransformer>(blocks[name]);
+        return block->forward(ctx, x, context);
+#endif
+
     }
 
     struct ggml_tensor* forward(struct ggml_context* ctx,

@@ -38,20 +38,20 @@ enum rng_type_t {
 enum sample_method_t {
     EULER_A,
     EULER,
-    HEUN,
-    DPM2,
-    DPMPP2S_A,
-    DPMPP2M,
-    DPMPP2Mv2,
-    LCM,
+    // HEUN,
+    // DPM2,
+    // DPMPP2S_A,
+    // DPMPP2M,
+    // DPMPP2Mv2,
+    // LCM,
     N_SAMPLE_METHODS
 };
 
 enum schedule_t {
     DEFAULT,
     DISCRETE,
-    KARRAS,
-    AYS,
+    // KARRAS,
+    // AYS,
     N_SCHEDULES
 };
 
@@ -151,8 +151,9 @@ SD_API sd_image_t* txt2img(sd_ctx_t* sd_ctx,
                            const sd_image_t* control_cond,
                            float control_strength,
                            float style_strength,
-                           bool normalize_input,
-                           const char* input_id_images_path);
+                           // bool normalize_input,
+                           // const char* input_id_images_path);
+                           bool normalize_input);
 
 SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,
                            sd_image_t init_image,
@@ -170,32 +171,33 @@ SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,
                            const sd_image_t* control_cond,
                            float control_strength,
                            float style_strength,
-                           bool normalize_input,
-                           const char* input_id_images_path);
+                           // bool normalize_input,
+                           // const char* input_id_images_path);
+                           bool normalize_input);
 
-SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
-                           sd_image_t init_image,
-                           int width,
-                           int height,
-                           int video_frames,
-                           int motion_bucket_id,
-                           int fps,
-                           float augmentation_level,
-                           float min_cfg,
-                           float cfg_scale,
-                           enum sample_method_t sample_method,
-                           int sample_steps,
-                           float strength,
-                           int64_t seed);
+// SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
+//                            sd_image_t init_image,
+//                            int width,
+//                            int height,
+//                            int video_frames,
+//                            int motion_bucket_id,
+//                            int fps,
+//                            float augmentation_level,
+//                            float min_cfg,
+//                            float cfg_scale,
+//                            enum sample_method_t sample_method,
+//                            int sample_steps,
+//                            float strength,
+//                            int64_t seed);
 
-typedef struct upscaler_ctx_t upscaler_ctx_t;
+// typedef struct upscaler_ctx_t upscaler_ctx_t;
 
-SD_API upscaler_ctx_t* new_upscaler_ctx(const char* esrgan_path,
-                                        int n_threads,
-                                        enum sd_type_t wtype);
-SD_API void free_upscaler_ctx(upscaler_ctx_t* upscaler_ctx);
+// SD_API upscaler_ctx_t* new_upscaler_ctx(const char* esrgan_path,
+//                                         int n_threads,
+//                                         enum sd_type_t wtype);
+// SD_API void free_upscaler_ctx(upscaler_ctx_t* upscaler_ctx);
 
-SD_API sd_image_t upscale(upscaler_ctx_t* upscaler_ctx, sd_image_t input_image, uint32_t upscale_factor);
+// SD_API sd_image_t upscale(upscaler_ctx_t* upscaler_ctx, sd_image_t input_image, uint32_t upscale_factor);
 
 SD_API bool convert(const char* input_path, const char* vae_path, const char* output_path, sd_type_t output_type);
 

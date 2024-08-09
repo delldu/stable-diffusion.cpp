@@ -114,6 +114,7 @@ public:
     }
 };
 
+#if 0 // VERSION_SVD
 class AE3DConv : public Conv2d {
 public:
     AE3DConv(int64_t in_channels,
@@ -160,7 +161,9 @@ public:
         return x;                                              // [B*T, OC, OH, OW]
     }
 };
+#endif
 
+#if 0 // VERSION_SVD
 class VideoResnetBlock : public ResnetBlock {
 protected:
     void init_params(struct ggml_context* ctx, ggml_type wtype) {
@@ -215,6 +218,7 @@ public:
         return x;
     }
 };
+#endif
 
 // ldm.modules.diffusionmodules.model.Encoder
 class Encoder : public GGMLBlock {
@@ -328,20 +332,28 @@ protected:
                                                     std::pair<int, int> kernel_size,
                                                     std::pair<int, int> stride  = {1, 1},
                                                     std::pair<int, int> padding = {0, 0}) {
+#if 0 //         
         if (video_decoder) {
             return std::shared_ptr<GGMLBlock>(new AE3DConv(in_channels, out_channels, kernel_size, video_kernel_size, stride, padding));
         } else {
             return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, stride, padding));
         }
+#else
+        return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, stride, padding));
+#endif        
     }
 
     virtual std::shared_ptr<GGMLBlock> get_resnet_block(int64_t in_channels,
                                                         int64_t out_channels) {
+#if 0 // VERSION_SVD        
         if (video_decoder) {
             return std::shared_ptr<GGMLBlock>(new VideoResnetBlock(in_channels, out_channels, video_kernel_size));
         } else {
             return std::shared_ptr<GGMLBlock>(new ResnetBlock(in_channels, out_channels));
         }
+#else
+        return std::shared_ptr<GGMLBlock>(new ResnetBlock(in_channels, out_channels));
+#endif        
     }
 
 public:

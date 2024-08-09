@@ -39,7 +39,7 @@ image_files = [f for f in os.listdir(directory) if f.lower().endswith(('.png', '
 image_files = sorted(image_files)
 
 # 生成图片标签
-image_tags = '\n'.join([f'<img src="{f}" alt="Image {i}" style="width:200px;height:200px;">' for i, f in enumerate(image_files)])
+image_tags = '\n'.join([f'<a href="{f}"><img src="{f}" alt="Image {i}" style="width:200px;height:200px;"></a>' for i, f in enumerate(image_files)])
 
 # 使用Template填充HTML模板
 filled_html = html_template.substitute(image_tags=image_tags)

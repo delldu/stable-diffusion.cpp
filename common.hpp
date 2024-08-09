@@ -446,6 +446,7 @@ public:
     }
 };
 
+#if 0 // VERSION_SVD
 class AlphaBlender : public GGMLBlock {
 protected:
     void init_params(struct ggml_context* ctx, ggml_type wtype) {
@@ -477,7 +478,9 @@ public:
         return x;
     }
 };
+#endif
 
+#if 0 // VERSION_SVD
 class VideoResBlock : public ResBlock {
 public:
     VideoResBlock(int channels,
@@ -525,5 +528,6 @@ public:
         return x;
     }
 };
+#endif
 
 #endif  // __COMMON_HPP__
