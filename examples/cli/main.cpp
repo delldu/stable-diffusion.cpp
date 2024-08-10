@@ -211,30 +211,6 @@ void parse_args(int argc, const char** argv, SDParams& params) {
                 break;
             }
             params.controlnet_path = argv[i];
-        // } else if (arg == "--upscale-model") {
-        //     if (++i >= argc) {
-        //         invalid_arg = true;
-        //         break;
-        //     }
-        //     params.esrgan_path = argv[i];
-        // } else if (arg == "--embd-dir") {
-        //     if (++i >= argc) {
-        //         invalid_arg = true;
-        //         break;
-        //     }
-        //     params.embeddings_path = argv[i];
-        // } else if (arg == "--stacked-id-embd-dir") {
-        //     if (++i >= argc) {
-        //         invalid_arg = true;
-        //         break;
-        //     }
-        //     params.stacked_id_embeddings_path = argv[i];
-        // } else if (arg == "--input-id-images-dir") {
-        //     if (++i >= argc) {
-        //         invalid_arg = true;
-        //         break;
-        //     }
-        //     params.input_id_images_path = argv[i];
         } else if (arg == "--type") {
             if (++i >= argc) {
                 invalid_arg = true;
@@ -637,7 +613,6 @@ int main(int argc, const char* argv[]) {
                                   params.vae_path.c_str(),
                                   params.controlnet_path.c_str(),
                                   params.lora_model_dir.c_str(),
-                                  true,
                                   params.n_threads,
                                   params.wtype,
                                   params.rng_type,

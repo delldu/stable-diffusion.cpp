@@ -16,38 +16,38 @@
 #define STB_IMAGE_STATIC
 #include "stb_image.h"
 
-// #define STB_IMAGE_WRITE_IMPLEMENTATION
-// #define STB_IMAGE_WRITE_STATIC
-// #include "stb_image_write.h"
-
-const char* model_version_to_str[] = {
-    "1.x",
-    "2.x",
-    "XL",
-    "SVD",
-};
+// const char* model_version_to_str[] = {
+//     "1.x",
+//     "2.x",
+//     "XL",
+//     "SVD",
+// };
 
 const char* sampling_methods_str[] = {
     "Euler A",
     "Euler",
-    "Heun",
-    "DPM2",
-    "DPM++ (2s)",
-    "DPM++ (2M)",
-    "modified DPM++ (2M)",
-    "LCM",
+    // "Heun",
+    // "DPM2",
+    // "DPM++ (2s)",
+    // "DPM++ (2M)",
+    // "modified DPM++ (2M)",
+    // "LCM",
 };
 
 /*================================================== Helper Functions ================================================*/
 
-void calculate_alphas_cumprod(float* alphas_cumprod,
-                              float linear_start = 0.00085f,
-                              float linear_end   = 0.0120,
-                              int timesteps      = TIMESTEPS) {
+void calculate_alphas_cumprod(float* alphas_cumprod)
+{
+    float linear_start = 0.00085f;
+    float linear_end   = 0.0120;
+    int timesteps      = TIMESTEPS;
+
+
     float ls_sqrt = sqrtf(linear_start);
     float le_sqrt = sqrtf(linear_end);
     float amount  = le_sqrt - ls_sqrt;
     float product = 1.0f;
+
     for (int i = 0; i < timesteps; i++) {
         float beta = ls_sqrt + amount * ((float)i / (timesteps - 1));
         product *= 1.0f - powf(beta, 2.0f);
@@ -66,18 +66,17 @@ public:
     ggml_type model_data_type          = GGML_TYPE_COUNT;
 
     SDVersion version;
-    bool free_params_immediately = false;
 
     std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
     int n_threads            = -1;
     float scale_factor       = 0.18215f;
 
-    std::shared_ptr<FrozenCLIPEmbedderWithCustomWords> cond_stage_model;
+    std::shared_ptr<TextEncoder> cond_stage_model;
     std::shared_ptr<UNetModel> diffusion_model;
     std::shared_ptr<AutoEncoderKL> first_stage_model;
     std::shared_ptr<ControlNet> control_net;
 
-    std::map<std::string, struct ggml_tensor*> tensors;
+    std::map<std::string, struct ggml_tensor*> tensors; // xxxx_debug
 
     std::string lora_model_dir;
     // lora_name => multiplier
@@ -86,25 +85,14 @@ public:
     // std::shared_ptr<Denoiser> denoiser = std::make_shared<CompVisDenoiser>();
     std::shared_ptr<Denoiser> denoiser = std::make_shared<Denoiser>();
 
-    std::string trigger_word = "img";  // should be user settable
+    // std::string trigger_word = "img";  // should be user settable
 
     StableDiffusionGGML() = default;
 
-    StableDiffusionGGML(int n_threads,
-                        bool free_params_immediately,
-                        std::string lora_model_dir,
-                        rng_type_t rng_type)
-        : n_threads(n_threads),
-          free_params_immediately(free_params_immediately),
-          lora_model_dir(lora_model_dir) {
+    StableDiffusionGGML(int n_threads, std::string lora_model_dir, rng_type_t rng_type)
+        : n_threads(n_threads), lora_model_dir(lora_model_dir) {
 
         rng = std::make_shared<STDDefaultRNG>();
-
-        if (rng_type == STD_DEFAULT_RNG) {
-            rng = std::make_shared<STDDefaultRNG>();
-        // } else if (rng_type == CUDA_RNG) {
-        //     rng = std::make_shared<PhiloxRNG>();
-        }
     }
 
     ~StableDiffusionGGML() {
@@ -167,7 +155,6 @@ public:
             return false;
         }
 
-        LOG_INFO("Stable Diffusion %s ", model_version_to_str[version]);
         if (wtype == GGML_TYPE_COUNT) {
             model_data_type = model_loader.get_sd_wtype();
         } else {
@@ -183,7 +170,7 @@ public:
         /* if (version != VERSION_SVD) */
         {
             clip_backend = backend;
-            cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(clip_backend, model_data_type, version);
+            cond_stage_model = std::make_shared<TextEncoder>(clip_backend, model_data_type, version);
             cond_stage_model->alloc_params_buffer();
             cond_stage_model->get_param_tensors(tensors, "cond_stage_model.");
 
@@ -379,7 +366,7 @@ public:
         curr_lora_state = lora_state;
     }
 
-    
+    // xxxx_debug: cond_stage_model ... start_engine() .. y = forward(text, skip, height, width), ..., stop_engine()
     std::pair<ggml_tensor*, ggml_tensor*> get_learned_condition(ggml_context* work_ctx,
                                                                 const std::string& text,
                                                                 int clip_skip,
@@ -388,15 +375,7 @@ public:
         auto tokens_and_weights     = cond_stage_model->tokenize(text, true);
         std::vector<int>& tokens    = tokens_and_weights.first;
         std::vector<float>& weights = tokens_and_weights.second;
-    //     return get_learned_condition_common(work_ctx, tokens, weights, clip_skip, width, height);
-    // }
 
-    // std::pair<ggml_tensor*, ggml_tensor*> get_learned_condition_common(ggml_context* work_ctx,
-    //                                                                    std::vector<int>& tokens,
-    //                                                                    std::vector<float>& weights,
-    //                                                                    int clip_skip,
-    //                                                                    int width,
-    //                                                                    int height) {
         cond_stage_model->set_clip_skip(clip_skip);
         int64_t t0                              = ggml_time_ms();
         struct ggml_tensor* hidden_states       = NULL;  // [N, n_token, hidden_size]
@@ -406,6 +385,9 @@ public:
 
         size_t chunk_len   = 77;
         size_t chunk_count = tokens.size() / chunk_len;
+
+        CheckPoint("text = %s, chunk_count = %d", text.c_str(), chunk_count);
+
         for (int chunk_idx = 0; chunk_idx < chunk_count; chunk_idx++) {
             std::vector<int> chunk_tokens(tokens.begin() + chunk_idx * chunk_len,
                                           tokens.begin() + (chunk_idx + 1) * chunk_len);
@@ -426,6 +408,7 @@ public:
                 input_ids2 = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens);
             }
 
+            CheckPoint("chunk_idx = %d", chunk_idx);
             cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, false, &chunk_hidden_states, work_ctx);
             if (version == VERSION_XL && chunk_idx == 0) {
                 // ==> CheckPoint("chunk_idx == 0");
@@ -694,7 +677,6 @@ sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
                      const char* vae_path_c_str,
                      const char* control_net_path_c_str,
                      const char* lora_model_dir_c_str,
-                     bool free_params_immediately,
                      int n_threads,
                      enum sd_type_t wtype,
                      enum rng_type_t rng_type,
@@ -708,10 +690,7 @@ sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
     std::string control_net_path(control_net_path_c_str);
     std::string lora_model_dir(lora_model_dir_c_str);
 
-    sd_ctx->sd = new StableDiffusionGGML(n_threads,
-                                         free_params_immediately,
-                                         lora_model_dir,
-                                         rng_type);
+    sd_ctx->sd = new StableDiffusionGGML(n_threads, lora_model_dir, rng_type);
     if (sd_ctx->sd == NULL) {
         return NULL;
     }
@@ -788,6 +767,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     struct ggml_tensor* uc        = NULL;
     struct ggml_tensor* uc_vector = NULL;
 
+    CheckPoint("----------------------------------------------------------");
     // CheckPoint("cfg_scale = %.4f", cfg_scale); // cfg_scale = 1.8
     if (cfg_scale != 1.0) {
         auto uncond_pair = sd_ctx->sd->get_learned_condition(work_ctx, negative_prompt, clip_skip, width, height);
@@ -797,9 +777,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     t1 = ggml_time_ms();
     LOG_INFO("get_learned_condition completed, taking %" PRId64 " ms", t1 - t0);
 
-    if (sd_ctx->sd->free_params_immediately) {
-        sd_ctx->sd->cond_stage_model->free_params_buffer();
-    }
+    sd_ctx->sd->cond_stage_model->free_params_buffer();
 
     // Control net hint
     // 2) xxxx_debug !!!
@@ -851,9 +829,8 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
         final_latents.push_back(x_0);
     }
 
-    if (sd_ctx->sd->free_params_immediately) {
-        sd_ctx->sd->diffusion_model->free_params_buffer();
-    }
+    sd_ctx->sd->diffusion_model->free_params_buffer();
+
     int64_t t3 = ggml_time_ms();
     LOG_INFO("generating %" PRId64 " latent images completed, taking %.2fs", final_latents.size(), (t3 - t1) * 1.0f / 1000);
 
@@ -874,9 +851,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
 
     int64_t t4 = ggml_time_ms();
     LOG_INFO("decode_first_stage completed, taking %.2fs", (t4 - t3) * 1.0f / 1000);
-    if (sd_ctx->sd->free_params_immediately) {
-        sd_ctx->sd->first_stage_model->free_params_buffer();
-    }
+    sd_ctx->sd->first_stage_model->free_params_buffer();
     sd_image_t* result_images = (sd_image_t*)calloc(batch_count, sizeof(sd_image_t));
     if (result_images == NULL) {
         ggml_free(work_ctx);
