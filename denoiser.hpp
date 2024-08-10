@@ -4,18 +4,12 @@
 #include "ggml_extend.hpp"
 
 /*================================================= CompVisDenoiser ==================================================*/
-
-// Ref: https://github.com/crowsonkb/k-diffusion/blob/master/k_diffusion/external.py
-
 #define TIMESTEPS 1000
 
-struct SigmaSchedule {
+struct DiscreteSchedule {
     float alphas_cumprod[TIMESTEPS];
     float sigmas[TIMESTEPS];
     float log_sigmas[TIMESTEPS];
-    int version = 0;
-
-    virtual std::vector<float> get_sigmas(uint32_t n) = 0;
 
     float sigma_to_t(float sigma) {
         float log_sigma = std::log(sigma);
@@ -50,9 +44,7 @@ struct SigmaSchedule {
         float log_sigma = (1.0f - w) * log_sigmas[low_idx] + w * log_sigmas[high_idx];
         return std::exp(log_sigma);
     }
-};
 
-struct DiscreteSchedule : SigmaSchedule {
     std::vector<float> get_sigmas(uint32_t n) {
         std::vector<float> result;
 
@@ -78,12 +70,9 @@ struct DiscreteSchedule : SigmaSchedule {
 
 
 struct Denoiser {
-    std::shared_ptr<SigmaSchedule> schedule              = std::make_shared<DiscreteSchedule>();
-    virtual std::vector<float> get_scalings(float sigma) = 0;
-};
-
-struct CompVisDenoiser : public Denoiser {
+    // CompVisDenoiser
     float sigma_data = 1.0f;
+    std::shared_ptr<DiscreteSchedule> schedule = std::make_shared<DiscreteSchedule>();
 
     std::vector<float> get_scalings(float sigma) {
         float c_out = -sigma;

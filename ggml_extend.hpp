@@ -315,53 +315,53 @@ __STATIC_INLINE__ void sd_image_f32_to_tensor(const float* image_data,
     }
 }
 
-__STATIC_INLINE__ void ggml_split_tensor_2d(struct ggml_tensor* input,
-                                            struct ggml_tensor* output,
-                                            int x,
-                                            int y) {
-    int64_t width    = output->ne[0];
-    int64_t height   = output->ne[1];
-    int64_t channels = output->ne[2];
-    GGML_ASSERT(input->type == GGML_TYPE_F32 && output->type == GGML_TYPE_F32);
-    for (int iy = 0; iy < height; iy++) {
-        for (int ix = 0; ix < width; ix++) {
-            for (int k = 0; k < channels; k++) {
-                float value = ggml_tensor_get_f32(input, ix + x, iy + y, k);
-                ggml_tensor_set_f32(output, value, ix, iy, k);
-            }
-        }
-    }
-}
+// __STATIC_INLINE__ void ggml_split_tensor_2d(struct ggml_tensor* input,
+//                                             struct ggml_tensor* output,
+//                                             int x,
+//                                             int y) {
+//     int64_t width    = output->ne[0];
+//     int64_t height   = output->ne[1];
+//     int64_t channels = output->ne[2];
+//     GGML_ASSERT(input->type == GGML_TYPE_F32 && output->type == GGML_TYPE_F32);
+//     for (int iy = 0; iy < height; iy++) {
+//         for (int ix = 0; ix < width; ix++) {
+//             for (int k = 0; k < channels; k++) {
+//                 float value = ggml_tensor_get_f32(input, ix + x, iy + y, k);
+//                 ggml_tensor_set_f32(output, value, ix, iy, k);
+//             }
+//         }
+//     }
+// }
 
-__STATIC_INLINE__ void ggml_merge_tensor_2d(struct ggml_tensor* input,
-                                            struct ggml_tensor* output,
-                                            int x,
-                                            int y,
-                                            int overlap) {
-    int64_t width    = input->ne[0];
-    int64_t height   = input->ne[1];
-    int64_t channels = input->ne[2];
-    GGML_ASSERT(input->type == GGML_TYPE_F32 && output->type == GGML_TYPE_F32);
-    for (int iy = 0; iy < height; iy++) {
-        for (int ix = 0; ix < width; ix++) {
-            for (int k = 0; k < channels; k++) {
-                float new_value = ggml_tensor_get_f32(input, ix, iy, k);
-                if (overlap > 0) {  // blend colors in overlapped area
-                    float old_value = ggml_tensor_get_f32(output, x + ix, y + iy, k);
-                    if (x > 0 && ix < overlap) {  // in overlapped horizontal
-                        ggml_tensor_set_f32(output, old_value + (new_value - old_value) * (ix / (1.0f * overlap)), x + ix, y + iy, k);
-                        continue;
-                    }
-                    if (y > 0 && iy < overlap) {  // in overlapped vertical
-                        ggml_tensor_set_f32(output, old_value + (new_value - old_value) * (iy / (1.0f * overlap)), x + ix, y + iy, k);
-                        continue;
-                    }
-                }
-                ggml_tensor_set_f32(output, new_value, x + ix, y + iy, k);
-            }
-        }
-    }
-}
+// __STATIC_INLINE__ void ggml_merge_tensor_2d(struct ggml_tensor* input,
+//                                             struct ggml_tensor* output,
+//                                             int x,
+//                                             int y,
+//                                             int overlap) {
+//     int64_t width    = input->ne[0];
+//     int64_t height   = input->ne[1];
+//     int64_t channels = input->ne[2];
+//     GGML_ASSERT(input->type == GGML_TYPE_F32 && output->type == GGML_TYPE_F32);
+//     for (int iy = 0; iy < height; iy++) {
+//         for (int ix = 0; ix < width; ix++) {
+//             for (int k = 0; k < channels; k++) {
+//                 float new_value = ggml_tensor_get_f32(input, ix, iy, k);
+//                 if (overlap > 0) {  // blend colors in overlapped area
+//                     float old_value = ggml_tensor_get_f32(output, x + ix, y + iy, k);
+//                     if (x > 0 && ix < overlap) {  // in overlapped horizontal
+//                         ggml_tensor_set_f32(output, old_value + (new_value - old_value) * (ix / (1.0f * overlap)), x + ix, y + iy, k);
+//                         continue;
+//                     }
+//                     if (y > 0 && iy < overlap) {  // in overlapped vertical
+//                         ggml_tensor_set_f32(output, old_value + (new_value - old_value) * (iy / (1.0f * overlap)), x + ix, y + iy, k);
+//                         continue;
+//                     }
+//                 }
+//                 ggml_tensor_set_f32(output, new_value, x + ix, y + iy, k);
+//             }
+//         }
+//     }
+// }
 
 __STATIC_INLINE__ float ggml_tensor_mean(struct ggml_tensor* src) {
     float mean        = 0.0f;
@@ -822,7 +822,6 @@ public:
         return true;
     }
 
-    // xxxx_debug
     void free_params_buffer() {
         if (params_buffer != NULL) {
             ggml_backend_buffer_free(params_buffer);
@@ -830,7 +829,6 @@ public:
         }
     }
 
-    // xxxx_debug
     size_t get_params_buffer_size() {
         if (params_buffer != NULL) {
             return ggml_backend_buffer_get_size(params_buffer);
@@ -847,7 +845,7 @@ public:
 
     // do copy after alloc graph
     void set_backend_tensor_data(struct ggml_tensor* tensor, const void* data) {
-        backend_tensor_data_map[tensor] = data;
+        backend_tensor_data_map[tensor] = data; // xxxx_debug !!!
     }
 
     struct ggml_tensor* to_backend(struct ggml_tensor* tensor) {
@@ -860,7 +858,7 @@ public:
             // pass input tensors to gpu memory
             auto backend_tensor = ggml_dup_tensor(compute_ctx, tensor);
 
-            set_backend_tensor_data(backend_tensor, tensor->data);
+            set_backend_tensor_data(backend_tensor, tensor->data); // xxxx_debug !!!
             return backend_tensor;
         } else {
             return tensor;
@@ -872,6 +870,12 @@ public:
                  bool free_compute_buffer_immediately = true,
                  struct ggml_tensor** output          = NULL,
                  struct ggml_context* output_ctx      = NULL) {
+
+        // if (output_ctx == NULL) {
+        //     CheckPoint("GGMLModule output_ctx == NULL");
+        // } else {
+        //     CheckPoint("GGMLModule output_ctx != NULL");
+        // }
         alloc_compute_buffer(get_graph);
         reset_compute_ctx();
         struct ggml_cgraph* gf = get_graph();
@@ -893,6 +897,7 @@ public:
 #endif
         if (output != NULL) {
             auto result = gf->nodes[gf->n_nodes - 1];
+
             if (*output == NULL && output_ctx != NULL) {
                 *output = ggml_dup_tensor(output_ctx, result);
             }
@@ -1137,7 +1142,6 @@ protected:
     int64_t embed_dim;
     int64_t n_head;
     bool bias;
-    bool mask;
 
 public:
     MultiheadAttention(int64_t embed_dim,

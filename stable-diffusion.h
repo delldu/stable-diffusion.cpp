@@ -29,7 +29,6 @@ extern "C" {
 #include <string.h>
 
 #define CheckPoint(fmt, arg...) printf("==> CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
-#define NeverPoint(fmt, arg...) do { printf("==> NeverPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg); exit(0); } while(0)
 
 enum rng_type_t {
     STD_DEFAULT_RNG,
@@ -97,7 +96,7 @@ typedef void (*sd_log_cb_t)(enum sd_log_level_t level, const char* text, void* d
 typedef void (*sd_progress_cb_t)(int step, int steps, float time, void* data);
 
 SD_API void sd_set_log_callback(sd_log_cb_t sd_log_cb, void* data);
-SD_API void sd_set_progress_callback(sd_progress_cb_t cb, void* data);
+// SD_API void sd_set_progress_callback(sd_progress_cb_t cb, void* data);
 SD_API int32_t get_num_physical_cores();
 SD_API const char* sd_get_system_info();
 

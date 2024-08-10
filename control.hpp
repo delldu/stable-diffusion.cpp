@@ -128,7 +128,7 @@ public:
             if (i != len_mults - 1) {
                 input_block_idx += 1;
                 std::string name = "input_blocks." + std::to_string(input_block_idx) + ".0";
-                blocks[name]     = std::shared_ptr<GGMLBlock>(new DownSampleBlock(ch, ch));
+                blocks[name]     = std::shared_ptr<GGMLBlock>(new DownSampleBlock(ch, ch, false));
 
                 blocks["zero_convs." + std::to_string(input_block_idx) + ".0"] = std::shared_ptr<GGMLBlock>(make_zero_conv(ch));
 
@@ -396,7 +396,7 @@ struct ControlNet : public GGMLModule {
 
         ggml_build_forward_expand(gf, ggml_cpy(compute_ctx, outs[0], guided_hint));
         for (int i = 0; i < outs.size() - 1; i++) {
-            ggml_build_forward_expand(gf, ggml_cpy(compute_ctx, outs[i + 1], controls[i]));
+            ggml_build_forward_expand(gf, ggml_cpy(compute_ctx, outs[i + 1], controls[i])); // xxxx_debug !!!
         }
 
         return gf;

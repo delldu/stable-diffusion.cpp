@@ -128,9 +128,6 @@ public:
         for (auto& pair : byte_unicode_pairs) {
             byte_decoder[pair.second] = pair.first;
         }
-        // for (auto & pair: byte_unicode_pairs) {
-        //     std::cout << pair.first << ": " << pair.second << std::endl;
-        // }
         std::vector<std::u32string> merges;
         size_t start = 0;
         size_t pos;
@@ -146,9 +143,6 @@ public:
         for (const auto& merge : merges) {
             size_t space_pos = merge.find(' ');
             merge_pairs.emplace_back(merge.substr(0, space_pos), merge.substr(space_pos + 1));
-            // LOG_DEBUG("%s", utf32_to_utf8(merge.substr(space_pos + 1)).c_str());
-            // printf("%s :: %s | %s \n", utf32_to_utf8(merge).c_str(), utf32_to_utf8(merge.substr(0, space_pos)).c_str(),
-            //                     utf32_to_utf8(merge.substr(space_pos + 1)).c_str());
         }
         std::vector<std::u32string> vocab;
         for (const auto& pair : byte_unicode_pairs) {
@@ -184,16 +178,6 @@ public:
         }
         bpe_len = rank;
     };
-
-    // void add_token(const std::string& text) {
-    //     std::u32string token = utf8_to_utf32(text);
-    //     auto it              = encoder.find(token);
-    //     if (it != encoder.end()) {
-    //         encoder[token]       = encoder_len;
-    //         decoder[encoder_len] = token;
-    //         encoder_len++;
-    //     }
-    // }
 
     std::u32string bpe(const std::u32string& token) {
         std::vector<std::u32string> word;
@@ -270,38 +254,8 @@ public:
         return result;
     }
 
-    // xxxx_debug
-    std::vector<int> tokenize(std::string text,
-                              on_new_token_cb_t on_new_token_cb,
-                              size_t max_length = 0,
-                              bool padding      = false) {
-        std::vector<int32_t> tokens = encode(text, on_new_token_cb);
-
-        tokens.insert(tokens.begin(), BOS_TOKEN_ID);
-        CheckPoint("max_length = %ld", max_length);
-
-        if (max_length > 0) {
-            NeverPoint("max_length > 0");
-            if (tokens.size() > max_length - 1) {
-                tokens.resize(max_length - 1);
-                tokens.push_back(EOS_TOKEN_ID);
-            } else {
-                tokens.push_back(EOS_TOKEN_ID);
-                if (padding) {
-                    int pad_token_id = PAD_TOKEN_ID;
-                    if (version == VERSION_2_x) {
-                        pad_token_id = 0;
-                    }
-                    tokens.insert(tokens.end(), max_length - tokens.size(), pad_token_id);
-                }
-            }
-        }
-
-        return tokens;
-    }
-
-
-    std::vector<int> encode(std::string text, on_new_token_cb_t on_new_token_cb) {
+    // std::vector<int> encode(std::string text, on_new_token_cb_t on_new_token_cb) {
+    std::vector<int> encode(std::string text) {
         std::string original_text = text;
         std::vector<int32_t> bpe_tokens;
         text = whitespace_clean(text);
@@ -314,11 +268,6 @@ public:
         std::string str = text;
         std::vector<std::string> token_strs;
         while (std::regex_search(str, matches, pat)) {
-            bool skip = on_new_token_cb(str, bpe_tokens);
-            if (skip) {
-                NeverPoint("skip ...");
-                continue;
-            }
             for (auto& token : matches) {
                 std::string token_str = token.str();
                 std::u32string utf32_token;
@@ -342,12 +291,6 @@ public:
             }
             str = matches.suffix();
         }
-        std::stringstream ss;
-        ss << "[";
-        for (auto token : token_strs) {
-            ss << "\"" << token << "\", ";
-        }
-        ss << "]";
         return bpe_tokens;
     }
 };
@@ -515,7 +458,6 @@ public:
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int clip_skip = -1, bool mask = true) {
         // x: [N, n_token, d_model]
         int layer_idx = n_layer - 1;
-        // LOG_DEBUG("clip_skip %d", clip_skip);
         if (clip_skip > 0) {
             layer_idx = n_layer - clip_skip;
         }
@@ -536,7 +478,7 @@ public:
 
 class CLIPEmbeddings : public GGMLBlock {
 protected:
-    int64_t embed_dim;
+    int64_t embed_dim; // 1024, 1280 ...
     int64_t vocab_size;
     int64_t num_positions;
 
@@ -554,21 +496,17 @@ public:
           num_positions(num_positions) {
     }
 
-    struct ggml_tensor* get_token_embed_weight() {
-        return params["token_embedding.weight"];
-    }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx,
-                                struct ggml_tensor* input_ids,
-                                struct ggml_tensor* custom_embed_weight) {
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids) {
         // input_ids: [N, n_token]
         auto token_embed_weight    = params["token_embedding.weight"];
         auto position_embed_weight = params["position_embedding.weight"];
 
         GGML_ASSERT(input_ids->ne[0] == position_embed_weight->ne[1]);
         input_ids            = ggml_reshape_3d(ctx, input_ids, input_ids->ne[0], 1, input_ids->ne[1]);
-        auto token_embedding = ggml_get_rows(ctx, custom_embed_weight != NULL ? custom_embed_weight : token_embed_weight, input_ids);
-        token_embedding      = ggml_reshape_3d(ctx, token_embedding, token_embedding->ne[0], token_embedding->ne[1], token_embedding->ne[3]);
+        auto token_embedding = ggml_get_rows(ctx, token_embed_weight, input_ids);
+        token_embedding      = ggml_reshape_3d(ctx, token_embedding, 
+            token_embedding->ne[0], token_embedding->ne[1], token_embedding->ne[3]);
 
         // token_embedding + position_embedding
         auto x = ggml_add(ctx,
@@ -589,6 +527,8 @@ class CLIPTextModel : public GGMLBlock {
 protected:
     void init_params(struct ggml_context* ctx, ggml_type wtype) {
         if (version == OPEN_CLIP_VIT_BIGG_14) {
+            // CheckPoint("OPEN_CLIP_VIT_BIGG_14 projection_dim = %d, hidden_size = %d", projection_dim, hidden_size);
+            // OPEN_CLIP_VIT_BIGG_14 projection_dim = 1280, hidden_size = 1280
             params["text_projection"] = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, projection_dim, hidden_size);
         }
     }
@@ -621,7 +561,14 @@ public:
             n_head            = 20;
             n_layer           = 32;
         }
+
+        // CheckPoint("CLIPVersion version = %d, clip_skip_value = %d", version, clip_skip_value);
+        // **** CLIPVersion version = 0, clip_skip_value = -1
+        // CLIPVersion version = 0, clip_skip_value = 2 --- OPENAI_CLIP_VIT_L_14
+        // CLIPVersion version = 2, clip_skip_value = 2 --- OPEN_CLIP_VIT_BIGG_14
+
         set_clip_skip(clip_skip_value);
+
 
         blocks["embeddings"]       = std::shared_ptr<GGMLBlock>(new CLIPEmbeddings(hidden_size, vocab_size, n_token));
         blocks["encoder"]          = std::shared_ptr<GGMLBlock>(new CLIPEncoder(n_layer, hidden_size, n_head, intermediate_size));
@@ -636,22 +583,19 @@ public:
         clip_skip = skip;
     }
 
-    struct ggml_tensor* get_token_embed_weight() {
-        auto embeddings = std::dynamic_pointer_cast<CLIPEmbeddings>(blocks["embeddings"]);
-        return embeddings->get_token_embed_weight();
-    }
 
     struct ggml_tensor* forward(struct ggml_context* ctx,
                                 struct ggml_tensor* input_ids,
-                                struct ggml_tensor* tkn_embeddings,
                                 size_t max_token_idx = 0,
                                 bool return_pooled   = false) {
+        // CheckPoint("max_token_idx = %ld", max_token_idx); // 0, 1, 4, 17, 21 ...
+
         // input_ids: [N, n_token]
         auto embeddings       = std::dynamic_pointer_cast<CLIPEmbeddings>(blocks["embeddings"]);
         auto encoder          = std::dynamic_pointer_cast<CLIPEncoder>(blocks["encoder"]);
         auto final_layer_norm = std::dynamic_pointer_cast<LayerNorm>(blocks["final_layer_norm"]);
 
-        auto x = embeddings->forward(ctx, input_ids, tkn_embeddings);  // [N, n_token, hidden_size]
+        auto x = embeddings->forward(ctx, input_ids);  // [N, n_token, hidden_size], xxxx_debug
         x      = encoder->forward(ctx, x, return_pooled ? -1 : clip_skip, true);
         if (return_pooled || with_final_ln) {
             x = final_layer_norm->forward(ctx, x);
@@ -676,9 +620,8 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
     CLIPTextModel text_model;
     CLIPTextModel text_model2;
 
-    int32_t num_custom_embeddings = 0;
-    std::vector<uint8_t> token_embed_custom;
-    std::vector<std::string> readed_embeddings;
+    // std::vector<uint8_t> token_embed_custom;
+    // std::vector<std::string> readed_embeddings;
 
     FrozenCLIPEmbedderWithCustomWords(ggml_backend_t backend,
                                       ggml_type wtype,
@@ -686,7 +629,8 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
                                       int clip_skip     = -1)
         : GGMLModule(backend, wtype), version(version), tokenizer(version) {
 
-        CheckPoint("FrozenCLIPEmbedderWithCustomWords: version = %d, clip_skip = %d", version, clip_skip);
+        // CheckPoint("FrozenCLIPEmbedderWithCustomWords: version = %d, clip_skip = %d", version, clip_skip);
+        // FrozenCLIPEmbedderWithCustomWords: version = 2, clip_skip = -1
         if (clip_skip <= 0) {
             clip_skip = 1;
             if (version == VERSION_2_x || version == VERSION_XL) {
@@ -694,14 +638,14 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
             }
         }
         if (version == VERSION_1_x) {
-            text_model = CLIPTextModel(OPENAI_CLIP_VIT_L_14, clip_skip);
+            text_model = CLIPTextModel(OPENAI_CLIP_VIT_L_14, clip_skip, true /*with_final_ln*/);
             text_model.init(params_ctx, wtype);
         } else if (version == VERSION_2_x) {
-            text_model = CLIPTextModel(OPEN_CLIP_VIT_H_14, clip_skip);
+            text_model = CLIPTextModel(OPEN_CLIP_VIT_H_14, clip_skip, true /*with_final_ln*/);
             text_model.init(params_ctx, wtype);
         } else if (version == VERSION_XL) {
-            text_model  = CLIPTextModel(OPENAI_CLIP_VIT_L_14, clip_skip, false);
-            text_model2 = CLIPTextModel(OPEN_CLIP_VIT_BIGG_14, clip_skip, false);
+            text_model  = CLIPTextModel(OPENAI_CLIP_VIT_L_14, clip_skip, false /*with_final_ln*/);
+            text_model2 = CLIPTextModel(OPEN_CLIP_VIT_BIGG_14, clip_skip, false /*with_final_ln*/);
             text_model.init(params_ctx, wtype);
             text_model2.init(params_ctx, wtype);
         }
@@ -718,61 +662,21 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
         }
     }
 
-    // xxxx_debug
+    // std::map<std::string, struct ggml_tensor*>& tensors !!!
     void get_param_tensors(std::map<std::string, struct ggml_tensor*>& tensors, const std::string prefix) {
         text_model.get_param_tensors(tensors, prefix + "transformer.text_model");
         if (version == VERSION_XL) {
+            // cond_stage_model.1.transformer.text_model.encoder.layers.9.self_attn.v_proj.weight
             text_model2.get_param_tensors(tensors, prefix + "1.transformer.text_model");
         }
     }
 
-    bool load_embedding(std::string embd_name, std::string embd_path, std::vector<int32_t>& bpe_tokens) {
-        // the order matters
-        ModelLoader model_loader;
-        if (!model_loader.init_from_file(embd_path)) {
-            LOG_ERROR("embedding '%s' failed", embd_name.c_str());
-            return false;
-        }
-        if (std::find(readed_embeddings.begin(), readed_embeddings.end(), embd_name) != readed_embeddings.end()) {
-            LOG_DEBUG("embedding already read in: %s", embd_name.c_str());
-            return true;
-        }
-        struct ggml_init_params params;
-        params.mem_size               = 10 * 1024 * 1024;  // max for custom embeddings 10 MB
-        params.mem_buffer             = NULL;
-        params.no_alloc               = false;
-        struct ggml_context* embd_ctx = ggml_init(params);
-        struct ggml_tensor* embd      = NULL;
-        auto on_load                  = [&](const TensorStorage& tensor_storage, ggml_tensor** dst_tensor) {
-            if (tensor_storage.ne[0] != text_model.hidden_size) {
-                LOG_DEBUG("embedding wrong hidden size, got %i, expected %i", tensor_storage.ne[0], text_model.hidden_size);
-                return false;
-            }
-            embd        = ggml_new_tensor_2d(embd_ctx, wtype, text_model.hidden_size, tensor_storage.n_dims > 1 ? tensor_storage.ne[1] : 1);
-            *dst_tensor = embd;
-            return true;
-        };
-        model_loader.load_tensors(on_load, NULL);
-        readed_embeddings.push_back(embd_name);
-        token_embed_custom.resize(token_embed_custom.size() + ggml_nbytes(embd));
-        memcpy((void*)(token_embed_custom.data() + num_custom_embeddings * text_model.hidden_size * ggml_type_size(wtype)),
-               embd->data,
-               ggml_nbytes(embd));
-        for (int i = 0; i < embd->ne[1]; i++) {
-            bpe_tokens.push_back(text_model.vocab_size + num_custom_embeddings);
-            // LOG_DEBUG("new custom token: %i", text_model.vocab_size + num_custom_embeddings);
-            num_custom_embeddings++;
-        }
-        LOG_DEBUG("embedding '%s' applied, custom embeddings: %i", embd_name.c_str(), num_custom_embeddings);
-        return true;
-    }
-
     struct ggml_tensor* forward(struct ggml_context* ctx,
                                 struct ggml_tensor* input_ids,
-                                struct ggml_tensor* input_ids2,
-                                struct ggml_tensor* embeddings,
+                                struct ggml_tensor* input_ids2, // negative prompt ...
                                 size_t max_token_idx = 0,
                                 bool return_pooled   = false) {
+        // CheckPoint("return_pooled = %d", return_pooled); // false | true
         size_t N       = input_ids->ne[1];
         size_t n_token = input_ids->ne[0];
         if (input_ids != NULL && input_ids->ne[0] > text_model.n_token) {
@@ -785,11 +689,10 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
         }
 
         if (return_pooled) {
-            return text_model2.forward(ctx, input_ids2, NULL, max_token_idx, return_pooled);
+            return text_model2.forward(ctx, input_ids2, max_token_idx, return_pooled);
         }
 
-        auto hidden_states = text_model.forward(ctx, input_ids, embeddings);  // [N, n_token, hidden_size]
-        // LOG_DEBUG("hidden_states: %d %d %d %d", hidden_states->ne[0], hidden_states->ne[1], hidden_states->ne[2], hidden_states->ne[3]);
+        auto hidden_states = text_model.forward(ctx, input_ids);  // [N, n_token, hidden_size]
         if (version == VERSION_XL) {
             hidden_states = ggml_reshape_4d(ctx,
                                             hidden_states,
@@ -799,8 +702,7 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
                                             hidden_states->ne[3]);
             hidden_states = ggml_cont(ctx, ggml_permute(ctx, hidden_states, 2, 0, 1, 3));
 
-            auto hidden_states2 = text_model2.forward(ctx, input_ids2, NULL);  // [N, n_token, hidden_size2]
-            // LOG_DEBUG("hidden_states: %d %d %d %d", hidden_states->ne[0], hidden_states->ne[1], hidden_states->ne[2], hidden_states->ne[3]);
+            auto hidden_states2 = text_model2.forward(ctx, input_ids2);  // [N, n_token, hidden_size2]
             hidden_states2 = ggml_reshape_4d(ctx,
                                              hidden_states2,
                                              hidden_states2->ne[0],
@@ -814,7 +716,6 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
             hidden_states = ggml_cont(ctx, ggml_permute(ctx, hidden_states, 1, 2, 0, 3));
         }
         hidden_states = ggml_reshape_3d(ctx, hidden_states, hidden_states->ne[0], n_token, N);
-        // LOG_DEBUG("hidden_states: %d %d %d %d", hidden_states->ne[0], hidden_states->ne[1], hidden_states->ne[2], hidden_states->ne[3]);
         return hidden_states;
     }
 
@@ -829,24 +730,7 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
             input_ids = to_backend(input_ids);
         }
 
-        struct ggml_tensor* embeddings = NULL;
-
-        if (num_custom_embeddings > 0 && version != VERSION_XL) {
-            auto custom_embeddings = ggml_new_tensor_3d(compute_ctx,
-                                                        wtype,
-                                                        text_model.hidden_size,
-                                                        1,
-                                                        num_custom_embeddings);
-            set_backend_tensor_data(custom_embeddings, token_embed_custom.data());
-
-            auto token_embed_weight = text_model.get_token_embed_weight();
-            token_embed_weight      = ggml_reshape_3d(compute_ctx, token_embed_weight, token_embed_weight->ne[0], 1, token_embed_weight->ne[1]);
-            // concatenate custom embeddings
-            embeddings = ggml_concat(compute_ctx, token_embed_weight, custom_embeddings, 2);
-            embeddings = ggml_reshape_2d(compute_ctx, embeddings, embeddings->ne[0], embeddings->ne[2]);
-        }
-
-        struct ggml_tensor* hidden_states = forward(compute_ctx, input_ids, input_ids2, embeddings, max_token_idx, return_pooled);
+        struct ggml_tensor* hidden_states = forward(compute_ctx, input_ids, input_ids2, max_token_idx, return_pooled);
 
         ggml_build_forward_expand(gf, hidden_states);
 
@@ -928,30 +812,13 @@ struct FrozenCLIPEmbedderWithCustomWords : public GGMLModule {
                                                              size_t max_length = 0,
                                                              bool padding      = false) {
         auto parsed_attention = parse_prompt_attention(text);
-
-        {
-            std::stringstream ss;
-            ss << "[";
-            for (const auto& item : parsed_attention) {
-                ss << "['" << item.first << "', " << item.second << "], ";
-            }
-            ss << "]";
-            LOG_DEBUG("parse '%s' to %s", text.c_str(), ss.str().c_str());
-        }
-
-        auto on_new_token_cb = [&](std::string& str, std::vector<int32_t>& bpe_tokens) -> bool {
-            size_t word_end       = str.find(",");
-            std::string embd_name = word_end == std::string::npos ? str : str.substr(0, word_end);
-            embd_name             = trim(embd_name);
-            return false;
-        };
-
         std::vector<int> tokens;
         std::vector<float> weights;
         for (const auto& item : parsed_attention) {
             const std::string& curr_text = item.first;
             float curr_weight            = item.second;
-            std::vector<int> curr_tokens = tokenizer.encode(curr_text, on_new_token_cb);
+            std::vector<int> curr_tokens = tokenizer.encode(curr_text);
+
             tokens.insert(tokens.end(), curr_tokens.begin(), curr_tokens.end());
             weights.insert(weights.end(), curr_tokens.size(), curr_weight);
         }

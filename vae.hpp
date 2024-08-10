@@ -434,51 +434,51 @@ struct AutoEncoderKL : public GGMLModule {
         GGMLModule::compute(get_graph, n_threads, true, output, output_ctx);
     }
 
-    void test() {
-        struct ggml_init_params params;
-        params.mem_size   = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
-        params.mem_buffer = NULL;
-        params.no_alloc   = false;
+    // void test() {
+    //     struct ggml_init_params params;
+    //     params.mem_size   = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
+    //     params.mem_buffer = NULL;
+    //     params.no_alloc   = false;
 
-        struct ggml_context* work_ctx = ggml_init(params);
-        GGML_ASSERT(work_ctx != NULL);
+    //     struct ggml_context* work_ctx = ggml_init(params);
+    //     GGML_ASSERT(work_ctx != NULL);
 
-        {
-            // CPU, x{1, 3, 64, 64}: Pass
-            // CUDA, x{1, 3, 64, 64}: Pass, but sill get wrong result for some image, may be due to interlnal nan
-            // CPU, x{2, 3, 64, 64}: Wrong result
-            // CUDA, x{2, 3, 64, 64}: Wrong result, and different from CPU result
-            auto x = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 64, 64, 3, 2);
-            ggml_set_f32(x, 0.5f);
-            print_ggml_tensor(x);
-            struct ggml_tensor* out = NULL;
+    //     {
+    //         // CPU, x{1, 3, 64, 64}: Pass
+    //         // CUDA, x{1, 3, 64, 64}: Pass, but sill get wrong result for some image, may be due to interlnal nan
+    //         // CPU, x{2, 3, 64, 64}: Wrong result
+    //         // CUDA, x{2, 3, 64, 64}: Wrong result, and different from CPU result
+    //         auto x = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 64, 64, 3, 2);
+    //         ggml_set_f32(x, 0.5f);
+    //         print_ggml_tensor(x);
+    //         struct ggml_tensor* out = NULL;
 
-            int t0 = ggml_time_ms();
-            compute(8, x, false, &out, work_ctx);
-            int t1 = ggml_time_ms();
+    //         int t0 = ggml_time_ms();
+    //         compute(8, x, false, &out, work_ctx);
+    //         int t1 = ggml_time_ms();
 
-            print_ggml_tensor(out);
-            LOG_DEBUG("encode test done in %dms", t1 - t0);
-        }
+    //         print_ggml_tensor(out);
+    //         LOG_DEBUG("encode test done in %dms", t1 - t0);
+    //     }
 
-        if (false) {
-            // CPU, z{1, 4, 8, 8}: Pass
-            // CUDA, z{1, 4, 8, 8}: Pass
-            // CPU, z{3, 4, 8, 8}: Wrong result
-            // CUDA, z{3, 4, 8, 8}: Wrong result, and different from CPU result
-            auto z = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 8, 8, 4, 1);
-            ggml_set_f32(z, 0.5f);
-            print_ggml_tensor(z);
-            struct ggml_tensor* out = NULL;
+    //     if (false) {
+    //         // CPU, z{1, 4, 8, 8}: Pass
+    //         // CUDA, z{1, 4, 8, 8}: Pass
+    //         // CPU, z{3, 4, 8, 8}: Wrong result
+    //         // CUDA, z{3, 4, 8, 8}: Wrong result, and different from CPU result
+    //         auto z = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 8, 8, 4, 1);
+    //         ggml_set_f32(z, 0.5f);
+    //         print_ggml_tensor(z);
+    //         struct ggml_tensor* out = NULL;
 
-            int t0 = ggml_time_ms();
-            compute(8, z, true, &out, work_ctx);
-            int t1 = ggml_time_ms();
+    //         int t0 = ggml_time_ms();
+    //         compute(8, z, true, &out, work_ctx);
+    //         int t1 = ggml_time_ms();
 
-            print_ggml_tensor(out);
-            LOG_DEBUG("decode test done in %dms", t1 - t0);
-        }
-    };
+    //         print_ggml_tensor(out);
+    //         LOG_DEBUG("decode test done in %dms", t1 - t0);
+    //     }
+    // };
 };
 
 #endif

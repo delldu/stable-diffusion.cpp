@@ -45,7 +45,6 @@ public:
             num_heads             = -1;
         }
         // dims is always 2
-        // use_temporal_attention is always True for SVD
 
         blocks["time_embed.0"] = std::shared_ptr<GGMLBlock>(new Linear(model_channels, time_embed_dim));
         // time_embed_1 is nn.SiLU()
@@ -106,7 +105,7 @@ public:
             if (i != len_mults - 1) {
                 input_block_idx += 1;
                 std::string name = "input_blocks." + std::to_string(input_block_idx) + ".0";
-                blocks[name]     = std::shared_ptr<GGMLBlock>(new DownSampleBlock(ch, ch));
+                blocks[name]     = std::shared_ptr<GGMLBlock>(new DownSampleBlock(ch, ch, false));
 
                 input_block_chans.push_back(ch);
                 ds *= 2;

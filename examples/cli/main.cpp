@@ -70,10 +70,10 @@ struct SDParams {
     std::string model_path;
     std::string vae_path;
 
-    std::string esrgan_path;
+    // std::string esrgan_path;
     std::string controlnet_path;
-    std::string embeddings_path;
-    std::string stacked_id_embeddings_path;
+    // std::string embeddings_path;
+    // std::string stacked_id_embeddings_path;
     
     // std::string input_id_images_path;
     sd_type_t wtype = SD_TYPE_COUNT;
@@ -90,10 +90,10 @@ struct SDParams {
     int height        = 512;
     int batch_count   = 1;
 
-    int video_frames         = 6;
-    int motion_bucket_id     = 127;
+    // int video_frames         = 6;
+    // int motion_bucket_id     = 127;
     int fps                  = 6;
-    float augmentation_level = 0.f;
+    // float augmentation_level = 0.f;
 
     sample_method_t sample_method = EULER_A;
     schedule_t schedule           = DEFAULT;
