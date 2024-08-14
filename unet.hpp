@@ -47,12 +47,10 @@ public:
         // dims is always 2
 
         blocks["time_embed.0"] = std::shared_ptr<GGMLBlock>(new Linear(model_channels, time_embed_dim));
-        // time_embed_1 is nn.SiLU()
         blocks["time_embed.2"] = std::shared_ptr<GGMLBlock>(new Linear(time_embed_dim, time_embed_dim));
 
         if (version == VERSION_XL || version == VERSION_SVD) {
             blocks["label_emb.0.0"] = std::shared_ptr<GGMLBlock>(new Linear(adm_in_channels, time_embed_dim));
-            // label_emb_1 is nn.SiLU()
             blocks["label_emb.0.2"] = std::shared_ptr<GGMLBlock>(new Linear(time_embed_dim, time_embed_dim));
         }
 
@@ -61,9 +59,9 @@ public:
 
         std::vector<int> input_block_chans;
         input_block_chans.push_back(model_channels);
-        int ch              = model_channels;
+        int ch = model_channels;
         int input_block_idx = 0;
-        int ds              = 1;
+        int ds = 1;
 
         auto get_resblock = [&](int64_t channels, int64_t emb_channels, int64_t out_channels) -> ResBlock* {
             return new ResBlock(channels, emb_channels, out_channels);
@@ -78,23 +76,39 @@ public:
         };
 
         size_t len_mults = channel_mult.size();
+        // CheckPoint("---- len_mults = %ld", len_mults); // {1, 2, 4} ==> 3
+
         for (int i = 0; i < len_mults; i++) {
             int mult = channel_mult[i];
             for (int j = 0; j < num_res_blocks; j++) {
                 input_block_idx += 1;
                 std::string name = "input_blocks." + std::to_string(input_block_idx) + ".0";
-                blocks[name]     = std::shared_ptr<GGMLBlock>(get_resblock(ch, time_embed_dim, mult * model_channels));
+                // name = input_blocks.1.0, ch = 320, time_embed_dim = 1280, mult * model_channels = 320
+                // name = input_blocks.2.0, ch = 320, time_embed_dim = 1280, mult * model_channels = 320
+                // name = input_blocks.4.0, ch = 320, time_embed_dim = 1280, mult * model_channels = 640
+                // name = input_blocks.5.0, ch = 640, time_embed_dim = 1280, mult * model_channels = 640
+                // name = input_blocks.7.0, ch = 640, time_embed_dim = 1280, mult * model_channels = 1280
+                // name = input_blocks.8.0, ch = 1280, time_embed_dim = 1280, mult * model_channels = 1280
+
+                blocks[name] = std::shared_ptr<GGMLBlock>(get_resblock(ch, time_embed_dim, mult * model_channels));
 
                 ch = mult * model_channels;
+                // attention_resolutions = {4, 2}
                 if (std::find(attention_resolutions.begin(), attention_resolutions.end(), ds) != attention_resolutions.end()) {
                     int n_head = num_heads;
                     int d_head = ch / num_heads;
-                    if (num_head_channels != -1) {
-                        d_head = num_head_channels;
+                    if (num_head_channels != -1) { // ==> 64
+                        d_head = num_head_channels; // ==> 64
                         n_head = ch / d_head;
                     }
                     std::string name = "input_blocks." + std::to_string(input_block_idx) + ".1";
-                    blocks[name]     = std::shared_ptr<GGMLBlock>(get_attention_layer(ch,
+                    // channel_mult -- {1, 2, 4}, transformer_depth -- {1, 2, 10}
+                    // input_blocks.4.1, ch = 640, n_head = 10, d_head = 64, transformer_depth[i]=2, context_dim = 2048
+                    // input_blocks.5.1, ch = 640, n_head = 10, d_head = 64, transformer_depth[i]=2, context_dim = 2048
+                    // input_blocks.7.1, ch = 1280, n_head = 20, d_head = 64, transformer_depth[i]=10, context_dim = 2048
+                    // input_blocks.8.1, ch = 1280, n_head = 20, d_head = 64, transformer_depth[i]=10, context_dim = 2048
+
+                    blocks[name] = std::shared_ptr<GGMLBlock>(get_attention_layer(ch,
                                                                                       n_head,
                                                                                       d_head,
                                                                                       transformer_depth[i],
@@ -102,10 +116,12 @@ public:
                 }
                 input_block_chans.push_back(ch);
             }
-            if (i != len_mults - 1) {
-                input_block_idx += 1;
+            if (i != len_mults - 1) { // ==> i == 0 || i == 1
+                input_block_idx += 1; // ==> 3 | 6
                 std::string name = "input_blocks." + std::to_string(input_block_idx) + ".0";
-                blocks[name]     = std::shared_ptr<GGMLBlock>(new DownSampleBlock(ch, ch, false));
+                // // name = input_blocks.3.0, ch = 320
+                // // name = input_blocks.6.0, ch = 640
+                blocks[name] = std::shared_ptr<GGMLBlock>(new DownSampleBlock(ch, ch, false));
 
                 input_block_chans.push_back(ch);
                 ds *= 2;
@@ -115,10 +131,16 @@ public:
         // middle blocks
         int n_head = num_heads;
         int d_head = ch / num_heads;
+
+        // CheckPoint("---- num_head_channels = %ld", num_head_channels); // num_head_channels == 64
         if (num_head_channels != -1) {
-            d_head = num_head_channels;
+            d_head = num_head_channels; // ==> 64
             n_head = ch / d_head;
         }
+
+        // CheckPoint("---- ch = %d, time_embed_dim = %d, n_head = %d, d_head = %d, transformer_depth[transformer_depth.size() - 1] = %d, context_dim=%d",
+        //     ch, time_embed_dim, n_head, d_head, transformer_depth[transformer_depth.size() - 1], context_dim);
+        // ==> ---- ch = 1280, time_embed_dim = 1280, n_head = 20, d_head = 64, transformer_depth[transformer_depth.size() - 1] = 10, context_dim=2048
         blocks["middle_block.0"] = std::shared_ptr<GGMLBlock>(get_resblock(ch, time_embed_dim, ch));
         blocks["middle_block.1"] = std::shared_ptr<GGMLBlock>(get_attention_layer(ch,
                                                                                   n_head,
@@ -136,26 +158,44 @@ public:
                 input_block_chans.pop_back();
 
                 std::string name = "output_blocks." + std::to_string(output_block_idx) + ".0";
+                // name = output_blocks.0.0, ch + ich = 2560, time_embed_dim = 1280, mult * model_channels=1280
+                // name = output_blocks.1.0, ch + ich = 2560, time_embed_dim = 1280, mult * model_channels=1280
+                // name = output_blocks.2.0, ch + ich = 1920, time_embed_dim = 1280, mult * model_channels=1280
+                // name = output_blocks.3.0, ch + ich = 1920, time_embed_dim = 1280, mult * model_channels=640
+                // name = output_blocks.4.0, ch + ich = 1280, time_embed_dim = 1280, mult * model_channels=640
+                // name = output_blocks.5.0, ch + ich = 960, time_embed_dim = 1280, mult * model_channels=640
+                // name = output_blocks.6.0, ch + ich = 960, time_embed_dim = 1280, mult * model_channels=320
+                // name = output_blocks.7.0, ch + ich = 640, time_embed_dim = 1280, mult * model_channels=320
+                // name = output_blocks.8.0, ch + ich = 640, time_embed_dim = 1280, mult * model_channels=320
                 blocks[name]     = std::shared_ptr<GGMLBlock>(get_resblock(ch + ich, time_embed_dim, mult * model_channels));
 
-                ch                = mult * model_channels;
+                ch = mult * model_channels;
                 int up_sample_idx = 1;
+                // attention_resolutions = {4, 2}
                 if (std::find(attention_resolutions.begin(), attention_resolutions.end(), ds) != attention_resolutions.end()) {
                     int n_head = num_heads;
                     int d_head = ch / num_heads;
-                    if (num_head_channels != -1) {
-                        d_head = num_head_channels;
+                    if (num_head_channels != -1) { // ==> 64
+                        d_head = num_head_channels; // ==> 64
                         n_head = ch / d_head;
                     }
                     std::string name = "output_blocks." + std::to_string(output_block_idx) + ".1";
-                    blocks[name]     = std::shared_ptr<GGMLBlock>(get_attention_layer(ch, n_head, d_head, transformer_depth[i], context_dim));
+                    // name = output_blocks.0.1, ch = 1280, n_head = 20, d_head = 64, depth=10, context_dim=2048
+                    // name = output_blocks.1.1, ch = 1280, n_head = 20, d_head = 64, depth=10, context_dim=2048
+                    // name = output_blocks.2.1, ch = 1280, n_head = 20, d_head = 64, depth=10, context_dim=2048
+                    // name = output_blocks.3.1, ch = 640, n_head = 10, d_head = 64, depth=2, context_dim=2048
+                    // name = output_blocks.4.1, ch = 640, n_head = 10, d_head = 64, depth=2, context_dim=2048
+                    // name = output_blocks.5.1, ch = 640, n_head = 10, d_head = 64, depth=2, context_dim=2048
+                    blocks[name] = std::shared_ptr<GGMLBlock>(get_attention_layer(ch, n_head, d_head, transformer_depth[i], context_dim));
 
                     up_sample_idx++;
                 }
 
                 if (i > 0 && j == num_res_blocks) {
                     std::string name = "output_blocks." + std::to_string(output_block_idx) + "." + std::to_string(up_sample_idx);
-                    blocks[name]     = std::shared_ptr<GGMLBlock>(new UpSampleBlock(ch, ch));
+                    // name = output_blocks.2.2, ch = 1280
+                    // name = output_blocks.5.2, ch = 640
+                    blocks[name] = std::shared_ptr<GGMLBlock>(new UpSampleBlock(ch, ch));
 
                     ds /= 2;
                 }
@@ -165,6 +205,7 @@ public:
         }
 
         // out
+        // CheckPoint("---- ch = %d", ch); // ch = 320
         blocks["out.0"] = std::shared_ptr<GGMLBlock>(new GroupNorm32(ch));  // ch == model_channels
         // out_1 is nn.SiLU()
         blocks["out.2"] = std::shared_ptr<GGMLBlock>(new Conv2d(model_channels, out_channels, {3, 3}, {1, 1}, {1, 1}));
@@ -190,9 +231,9 @@ public:
                                 struct ggml_tensor* x,
                                 struct ggml_tensor* timesteps,
                                 struct ggml_tensor* context,
-                                struct ggml_tensor* y                     = NULL,
+                                struct ggml_tensor* y = NULL,
                                 std::vector<struct ggml_tensor*> controls = {},
-                                float control_strength                    = 0.f) {
+                                float control_strength  = 0.f) {
         if (context != NULL) {
             if (context->ne[2] != x->ne[3]) {
                 context = ggml_repeat(ctx, context, ggml_new_tensor_3d(ctx, GGML_TYPE_F32, context->ne[0], context->ne[1], x->ne[3]));
@@ -237,31 +278,55 @@ public:
 
         // input block 0
         auto h = input_blocks_0_0->forward(ctx, x);
-
         ggml_set_name(h, "bench-start");
         hs.push_back(h);
+
         // input block 1-11
         size_t len_mults    = channel_mult.size();
         int input_block_idx = 0;
-        int ds              = 1;
-        for (int i = 0; i < len_mults; i++) {
-            int mult = channel_mult[i];
-            for (int j = 0; j < num_res_blocks; j++) {
+        int ds = 1;
+        for (int i = 0; i < len_mults; i++) { // i == 0, 1, 2
+            // int mult = channel_mult[i];
+            for (int j = 0; j < num_res_blocks; j++) { // j = 0, 1
                 input_block_idx += 1;
                 std::string name = "input_blocks." + std::to_string(input_block_idx) + ".0";
-                h                = resblock_forward(name, ctx, h, emb);  // [N, mult*model_channels, h, w]
+                // name = input_blocks.1.0
+                // name = input_blocks.2.0
+                // name = input_blocks.4.0
+                // name = input_blocks.5.0
+                // name = input_blocks.7.0
+                // name = input_blocks.8.0
+                h = resblock_forward(name, ctx, h, emb);  // [N, mult*model_channels, h, w]
+                // attention_resolutions = {4, 2}, ds = 1, 2, 4(i == 2)
+#if 0                
                 if (std::find(attention_resolutions.begin(), attention_resolutions.end(), ds) != attention_resolutions.end()) {
                     std::string name = "input_blocks." + std::to_string(input_block_idx) + ".1";
-                    h                = attention_layer_forward(name, ctx, h, context);  // [N, mult*model_channels, h, w]
+                    // name = input_blocks.4.1
+                    // name = input_blocks.5.1
+                    // name = input_blocks.7.1
+                    // name = input_blocks.8.1
+                    h  = attention_layer_forward(name, ctx, h, context);  // [N, mult*model_channels, h, w]
                 }
+#else
+                if (i == 2) {
+                    std::string name = "input_blocks." + std::to_string(input_block_idx) + ".1";
+                    // name = input_blocks.4.1
+                    // name = input_blocks.5.1
+                    // name = input_blocks.7.1
+                    // name = input_blocks.8.1
+                    h  = attention_layer_forward(name, ctx, h, context);  // [N, mult*model_channels, h, w]
+                }
+#endif                
                 hs.push_back(h);
             }
-            if (i != len_mults - 1) {
+            if (i != len_mults - 1) { // i == 0 | 1
                 ds *= 2;
                 input_block_idx += 1;
 
                 std::string name = "input_blocks." + std::to_string(input_block_idx) + ".0";
-                auto block       = std::dynamic_pointer_cast<DownSampleBlock>(blocks[name]);
+                // name = input_blocks.3.0
+                // name = input_blocks.6.0
+                auto block  = std::dynamic_pointer_cast<DownSampleBlock>(blocks[name]);
 
                 h = block->forward(ctx, h);  // [N, mult*model_channels, h/(2^(i+1)), w/(2^(i+1))]
                 hs.push_back(h);
@@ -276,14 +341,15 @@ public:
 
         if (controls.size() > 0) {
             auto cs = ggml_scale_inplace(ctx, controls[controls.size() - 1], control_strength);
-            h       = ggml_add(ctx, h, cs);  // middle control
+            h  = ggml_add(ctx, h, cs);  // middle control
         }
         int control_offset = controls.size() - 2;
 
         // output_blocks
+        // CheckPoint(" --- hs.size() = %ld", hs.size()); // hs.size() = 9
         int output_block_idx = 0;
-        for (int i = (int)len_mults - 1; i >= 0; i--) {
-            for (int j = 0; j < num_res_blocks + 1; j++) {
+        for (int i = (int)len_mults - 1; i >= 0; i--) { // i = 2, 1, 0
+            for (int j = 0; j < num_res_blocks + 1; j++) { // j = 0, 1, 2
                 auto h_skip = hs.back();
                 hs.pop_back();
 
@@ -294,23 +360,54 @@ public:
                 }
 
                 h = ggml_concat(ctx, h, h_skip, 2);
-
                 std::string name = "output_blocks." + std::to_string(output_block_idx) + ".0";
+                // name = output_blocks.0.0
+                // name = output_blocks.1.0
+                // name = output_blocks.2.0
+                // name = output_blocks.3.0
+                // name = output_blocks.4.0
+                // name = output_blocks.5.0
+                // name = output_blocks.6.0
+                // name = output_blocks.7.0
+                // name = output_blocks.8.0
 
                 h = resblock_forward(name, ctx, h, emb);
 
                 int up_sample_idx = 1;
+                // attention_resolutions = {4, 2}, ds = 4, 2, 1
+#if 0                
                 if (std::find(attention_resolutions.begin(), attention_resolutions.end(), ds) != attention_resolutions.end()) {
                     std::string name = "output_blocks." + std::to_string(output_block_idx) + ".1";
+                    // name = output_blocks.0.1
+                    // name = output_blocks.1.1
+                    // name = output_blocks.2.1
+                    // name = output_blocks.3.1
+                    // name = output_blocks.4.1
+                    // name = output_blocks.5.1
+                    h = attention_layer_forward(name, ctx, h, context);
 
+                    up_sample_idx++;
+                }
+#else
+                if (i == 2 || i == 1) {
+                    std::string name = "output_blocks." + std::to_string(output_block_idx) + ".1";
+                    // name = output_blocks.0.1
+                    // name = output_blocks.1.1
+                    // name = output_blocks.2.1
+                    // name = output_blocks.3.1
+                    // name = output_blocks.4.1
+                    // name = output_blocks.5.1
                     h = attention_layer_forward(name, ctx, h, context);
 
                     up_sample_idx++;
                 }
 
+#endif                
                 if (i > 0 && j == num_res_blocks) {
                     std::string name = "output_blocks." + std::to_string(output_block_idx) + "." + std::to_string(up_sample_idx);
-                    auto block       = std::dynamic_pointer_cast<UpSampleBlock>(blocks[name]);
+                    // name = output_blocks.2.2
+                    // name = output_blocks.5.2
+                    auto block = std::dynamic_pointer_cast<UpSampleBlock>(blocks[name]);
 
                     h = block->forward(ctx, h);
 
@@ -318,7 +415,7 @@ public:
                 }
 
                 output_block_idx += 1;
-            }
+            } // end of j 
         }
 
         // out

@@ -188,7 +188,8 @@ class ResBlock {
     Conv2d out_layers_3;
     Conv2d skip_connection;
 
-    ResBlock() {
+
+    void create_weight_tensors(struct ggml_context* ctx) {
         std::pair<int, int> padding = {kernel_size.first / 2, kernel_size.second / 2};
 
         in_layers_0.num_channels = channels; // GroupNorm32
@@ -218,9 +219,7 @@ class ResBlock {
             skip_connection.kernel_size = {1, 1};
             skip_connection.padding = {0, 0};
         }
-    }
 
-    void create_weight_tensors(struct ggml_context* ctx) {
         in_layers_0.create_weight_tensors(ctx);
         in_layers_2.create_weight_tensors(ctx);
         if (!skip_t_emb) {
@@ -299,7 +298,6 @@ class ResBlock {
     }
 };
 
-
 struct ggml_tensor* ggml_nn_timestep_embedding(
     struct ggml_context* ctx,
     struct ggml_tensor* timesteps,
@@ -307,6 +305,67 @@ struct ggml_tensor* ggml_nn_timestep_embedding(
     int max_period = 10000) {
     return ggml_timestep_embedding(ctx, timesteps, dim, max_period);
 }
+
+
+
+class DownSampleBlock {
+    int channels;
+    int out_channels;
+
+    Conv2d op;
+
+    void create_weight_tensors(struct ggml_context* ctx) {
+        op.in_channels = channels;
+        op.out_channels = out_channels;
+        op.kernel_size = {3, 3};
+        op.stride = {2, 2};
+        op.padding = {1, 1};
+        op.create_weight_tensors(ctx);
+    }
+
+    void setup_weight_names(char *prefix) {
+        char s[1024];
+        snprintf(s, sizeof(s), "%s%s", prefix, "op.");
+        op.setup_weight_names(s);
+    }
+
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
+        // x: [N, channels, h, w]
+        x = op->forward(ctx, x);
+        return x;  // [N, out_channels, h/2, w/2]
+    }
+};
+
+
+class UpSampleBlock {
+    int channels;
+    int out_channels;
+
+    Conv2d conv;
+
+    void create_weight_tensors(struct ggml_context* ctx) {
+        conv.in_channels = channels;
+        conv.out_channels = out_channels;
+        conv.kernel_size = {3, 3};
+        conv.stride = {1, 1};
+        conv.padding = {1, 1};
+        conv.create_weight_tensors(ctx);
+    }
+
+    void setup_weight_names(char *prefix) {
+        char s[1024];
+        snprintf(s, sizeof(s), "%s%s", prefix, "conv.");
+        conv.setup_weight_names(s);
+    }
+
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
+        // x: [N, channels, h, w]
+        x = ggml_upscale(ctx, x, 2);  // [N, channels, h*2, w*2]
+        x = conv->forward(ctx, x);    // [N, out_channels, h*2, w*2]
+        return x;
+    }
+};
+
 
 
 #endif // _GGML_NN_H_
