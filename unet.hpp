@@ -228,6 +228,8 @@ public:
             label_emb      = label_embed_2->forward(ctx, label_emb);  // [N, time_embed_dim]
 
             emb = ggml_add(ctx, emb, label_emb);  // [N, time_embed_dim]
+        } else {
+            CheckPoint("y == NULL !");
         }
 
         // input_blocks

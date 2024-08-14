@@ -28,25 +28,6 @@ const char* rng_type_to_str[] = {
     "cuda",
 };
 
-// Names of the sampler method, same order as enum sample_method in stable-diffusion.h
-const char* sample_method_str[] = {
-    "euler_a",
-    "euler",
-    "heun",
-    "dpm2",
-    "dpm++2s_a",
-    "dpm++2m",
-    "dpm++2mv2",
-    "lcm",
-};
-
-// Names of the sigma schedule overrides, same order as sample_schedule in stable-diffusion.h
-const char* schedule_str[] = {
-    "default",
-    "discrete",
-    "karras",
-    "ays",
-};
 
 const char* modes_str[] = {
     "txt2img",
@@ -96,7 +77,7 @@ struct SDParams {
     // float augmentation_level = 0.f;
 
     sample_method_t sample_method = EULER_A;
-    schedule_t schedule           = DEFAULT;
+    // schedule_t schedule           = DEFAULT;
     int sample_steps              = 20;
     float strength                = 0.75f;
     float control_strength        = 0.9f;
@@ -126,8 +107,6 @@ void print_params(SDParams params) {
     printf("    clip_skip:         %d\n", params.clip_skip);
     printf("    width:             %d\n", params.width);
     printf("    height:            %d\n", params.height);
-    printf("    sample_method:     %s\n", sample_method_str[params.sample_method]);
-    printf("    schedule:          %s\n", schedule_str[params.schedule]);
     printf("    sample_steps:      %d\n", params.sample_steps);
     printf("    strength(img2img): %.2f\n", params.strength);
     printf("    rng:               %s\n", rng_type_to_str[params.rng_type]);
@@ -336,46 +315,12 @@ void parse_args(int argc, const char** argv, SDParams& params) {
                 invalid_arg = true;
                 break;
             }
-        } else if (arg == "--schedule") {
-            if (++i >= argc) {
-                invalid_arg = true;
-                break;
-            }
-            const char* schedule_selected = argv[i];
-            int schedule_found            = -1;
-            for (int d = 0; d < N_SCHEDULES; d++) {
-                if (!strcmp(schedule_selected, schedule_str[d])) {
-                    schedule_found = d;
-                }
-            }
-            if (schedule_found == -1) {
-                invalid_arg = true;
-                break;
-            }
-            params.schedule = (schedule_t)schedule_found;
         } else if (arg == "-s" || arg == "--seed") {
             if (++i >= argc) {
                 invalid_arg = true;
                 break;
             }
             params.seed = std::stoll(argv[i]);
-        } else if (arg == "--sampling-method") {
-            if (++i >= argc) {
-                invalid_arg = true;
-                break;
-            }
-            const char* sample_method_selected = argv[i];
-            int sample_method_found            = -1;
-            for (int m = 0; m < N_SAMPLE_METHODS; m++) {
-                if (!strcmp(sample_method_selected, sample_method_str[m])) {
-                    sample_method_found = m;
-                }
-            }
-            if (sample_method_found == -1) {
-                invalid_arg = true;
-                break;
-            }
-            params.sample_method = (sample_method_t)sample_method_found;
         } else if (arg == "-h" || arg == "--help") {
             print_usage(argc, argv);
             exit(0);
@@ -475,10 +420,6 @@ std::string get_image_params(SDParams params, int64_t seed) {
     parameter_string += "Size: " + std::to_string(params.width) + "x" + std::to_string(params.height) + ", ";
     parameter_string += "Model: " + sd_basename(params.model_path) + ", ";
     parameter_string += "RNG: " + std::string(rng_type_to_str[params.rng_type]) + ", ";
-    parameter_string += "Sampler: " + std::string(sample_method_str[params.sample_method]);
-    // if (params.schedule == KARRAS) {
-    //     parameter_string += " karras";
-    // }
     parameter_string += ", ";
     parameter_string += "Version: stable-diffusion.cpp";
     return parameter_string;
@@ -615,8 +556,9 @@ int main(int argc, const char* argv[]) {
                                   params.lora_model_dir.c_str(),
                                   params.n_threads,
                                   params.wtype,
-                                  params.rng_type,
-                                  params.schedule);
+                                  params.rng_type);
+    // ,
+    //                               params.schedule);
 
     if (sd_ctx == NULL) {
         printf("new_sd_ctx_t failed\n");
@@ -656,7 +598,7 @@ int main(int argc, const char* argv[]) {
                           params.cfg_scale,
                           params.width,
                           params.height,
-                          params.sample_method,
+                          // params.sample_method,
                           params.sample_steps,
                           params.seed,
                           params.batch_count,
@@ -677,7 +619,7 @@ int main(int argc, const char* argv[]) {
                           params.cfg_scale,
                           params.width,
                           params.height,
-                          params.sample_method,
+                          // params.sample_method,
                           params.sample_steps,
                           params.strength,
                           params.seed,

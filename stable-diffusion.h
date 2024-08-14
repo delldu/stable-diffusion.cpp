@@ -115,8 +115,7 @@ SD_API sd_ctx_t* new_sd_ctx(const char* model_path,
                             const char* lora_model_dir,
                             int n_threads,
                             enum sd_type_t wtype,
-                            enum rng_type_t rng_type,
-                            enum schedule_t s);
+                            enum rng_type_t rng_type);
 
 SD_API void free_sd_ctx(sd_ctx_t* sd_ctx);
 
@@ -127,7 +126,6 @@ SD_API sd_image_t* txt2img(sd_ctx_t* sd_ctx,
                            float cfg_scale,
                            int width,
                            int height,
-                           enum sample_method_t sample_method,
                            int sample_steps,
                            int64_t seed,
                            int batch_count,
@@ -142,7 +140,6 @@ SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,
                            float cfg_scale,
                            int width,
                            int height,
-                           enum sample_method_t sample_method,
                            int sample_steps,
                            float strength,
                            int64_t seed,

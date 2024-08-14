@@ -79,12 +79,6 @@ protected:
                                        std::pair<int, int> kernel_size,
                                        std::pair<int, int> padding) {
         GGML_ASSERT(dims == 2 || dims == 3);
-        // if (dims == 3) {
-        //     return std::shared_ptr<GGMLBlock>(new Conv3dnx1x1(in_channels, out_channels, kernel_size.first, 1, padding.first));
-        // } else {
-        //     return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, {1, 1}, padding));
-        // }
-
         return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, {1, 1}, padding));
     }
 

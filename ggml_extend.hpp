@@ -576,7 +576,8 @@ __STATIC_INLINE__ struct ggml_tensor* ggml_nn_group_norm(struct ggml_context* ct
     return x;
 }
 
-__STATIC_INLINE__ void ggml_backend_tensor_get_and_sync(ggml_backend_t backend, const struct ggml_tensor* tensor, void* data, size_t offset, size_t size) {
+__STATIC_INLINE__ void ggml_backend_tensor_get_and_sync(ggml_backend_t backend, const struct ggml_tensor* tensor, void* data, 
+    size_t offset, size_t size) {
 #ifdef SD_USE_CUBLAS
     if (!ggml_backend_is_cpu(backend)) {
         ggml_backend_tensor_get_async(backend, tensor, data, offset, size);
@@ -616,15 +617,15 @@ __STATIC_INLINE__ struct ggml_tensor* vector_to_ggml_tensor_i32(struct ggml_cont
     return t;
 }
 
-__STATIC_INLINE__ std::vector<float> arange(float start, float end, float step = 1.f) {
-    std::vector<float> result;
+// __STATIC_INLINE__ std::vector<float> arange(float start, float end, float step = 1.f) {
+//     std::vector<float> result;
 
-    for (float value = start; value < end; value += step) {
-        result.push_back(value);
-    }
+//     for (float value = start; value < end; value += step) {
+//         result.push_back(value);
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
 // Ref: https://github.com/CompVis/stable-diffusion/blob/main/ldm/modules/diffusionmodules/util.py#L151
 __STATIC_INLINE__ std::vector<float> timestep_embedding(std::vector<float> timesteps,
@@ -661,25 +662,7 @@ __STATIC_INLINE__ void set_timestep_embedding(std::vector<float> timesteps,
     memcpy(((char*)embedding->data), ((char*)embedding_vec.data()), ggml_nbytes(embedding));
 }
 
-__STATIC_INLINE__ struct ggml_tensor* new_timestep_embedding(struct ggml_context* ctx,
-                                                             std::vector<float> timesteps,
-                                                             int dim,
-                                                             int max_period = 10000) {
-    // timesteps: [N,]
-    // embedding: [N, dim]
-    std::vector<float> embedding_vec = timestep_embedding(timesteps, dim, max_period);
-    int acutual_dim                  = dim;
-    if (dim % 2 != 0) {
-        acutual_dim = dim + 1;
-    }
-    struct ggml_tensor* embedding = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, acutual_dim, timesteps.size());
-    if (embedding->data != NULL) {
-        memcpy(((char*)embedding->data), ((char*)embedding_vec.data()), ggml_nbytes(embedding));
-    } else {
-        ggml_backend_tensor_set(embedding, embedding_vec.data(), 0, ggml_nbytes(embedding));
-    }
-    return embedding;
-}
+
 
 __STATIC_INLINE__ struct ggml_tensor* ggml_nn_timestep_embedding(
     struct ggml_context* ctx,
@@ -899,9 +882,11 @@ public:
             auto result = gf->nodes[gf->n_nodes - 1];
 
             if (*output == NULL && output_ctx != NULL) {
+                // xxxx_debug
                 *output = ggml_dup_tensor(output_ctx, result);
             }
             if (*output != NULL) {
+                // xxxx_debug
                 ggml_backend_tensor_get_and_sync(backend, result, (*output)->data, 0, ggml_nbytes(*output));
             }
         }

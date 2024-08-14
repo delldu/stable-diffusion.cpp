@@ -83,15 +83,17 @@ struct Denoiser {
 
 
 
-typedef std::function<ggml_tensor*(ggml_tensor*, float, int)> denoise_cb_t;
+typedef std::function<ggml_tensor*(ggml_tensor*, float, int)> denoiser_cb_t;
 
 // k diffusion reverse ODE: dx = (x - D(x;\sigma)) / \sigma dt; \sigma(t) = t
-static void sample_k_diffusion(sample_method_t method,
-                               denoise_cb_t model,
+static void sample_k_diffusion(denoiser_cb_t model,
                                ggml_context* work_ctx,
                                ggml_tensor* x,
                                std::vector<float> sigmas,
                                std::shared_ptr<RNG> rng) {
+
+    sample_method_t method = EULER_A;
+
     size_t steps = sigmas.size() - 1;
     // sample_euler_ancestral
     switch (method) {

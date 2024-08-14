@@ -584,6 +584,7 @@ public:
     }
 
 
+    // xxxx_8888
     struct ggml_tensor* forward(struct ggml_context* ctx,
                                 struct ggml_tensor* input_ids,
                                 size_t max_token_idx = 0,
@@ -619,9 +620,6 @@ struct TextEncoder : public GGMLModule {
     CLIPTokenizer tokenizer;
     CLIPTextModel text_model;
     CLIPTextModel text_model2;
-
-    // std::vector<uint8_t> token_embed_custom;
-    // std::vector<std::string> readed_embeddings;
 
     TextEncoder(ggml_backend_t backend,
                                       ggml_type wtype,
@@ -671,6 +669,7 @@ struct TextEncoder : public GGMLModule {
         }
     }
 
+    // xxxx_8888
     struct ggml_tensor* forward(struct ggml_context* ctx,
                                 struct ggml_tensor* input_ids,
                                 struct ggml_tensor* input_ids2, // negative prompt ...
@@ -753,6 +752,7 @@ struct TextEncoder : public GGMLModule {
 
         CheckPoint("TextEncoder Start compute ...");
         GGMLModule::compute(get_graph, n_threads, true, output, output_ctx);
+        CheckPoint("TextEncoder Stop compute ...");
     }
 
 

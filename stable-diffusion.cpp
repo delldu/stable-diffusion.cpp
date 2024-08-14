@@ -16,22 +16,9 @@
 #define STB_IMAGE_STATIC
 #include "stb_image.h"
 
-// const char* model_version_to_str[] = {
-//     "1.x",
-//     "2.x",
-//     "XL",
-//     "SVD",
-// };
-
 const char* sampling_methods_str[] = {
     "Euler A",
     "Euler",
-    // "Heun",
-    // "DPM2",
-    // "DPM++ (2s)",
-    // "DPM++ (2M)",
-    // "modified DPM++ (2M)",
-    // "LCM",
 };
 
 /*================================================== Helper Functions ================================================*/
@@ -111,8 +98,7 @@ public:
     bool load_from_file(const std::string& model_path,
                         const std::string& vae_path,
                         const std::string control_net_path,
-                        ggml_type wtype,
-                        schedule_t schedule) {
+                        ggml_type wtype) {        
 #ifdef SD_USE_CUBLAS
         LOG_DEBUG("Using CUDA backend");
         backend = ggml_backend_cuda_init(0);
@@ -372,12 +358,15 @@ public:
                                                                 int clip_skip,
                                                                 int width,
                                                                 int height) {
+        // get_learned_condition clip_skip = -1
+
         auto tokens_and_weights     = cond_stage_model->tokenize(text, true);
         std::vector<int>& tokens    = tokens_and_weights.first;
         std::vector<float>& weights = tokens_and_weights.second;
 
+
         cond_stage_model->set_clip_skip(clip_skip);
-        int64_t t0                              = ggml_time_ms();
+        int64_t t0  = ggml_time_ms();
         struct ggml_tensor* hidden_states       = NULL;  // [N, n_token, hidden_size]
         struct ggml_tensor* chunk_hidden_states = NULL;  // [n_token, hidden_size]
         struct ggml_tensor* pooled              = NULL;
@@ -386,15 +375,14 @@ public:
         size_t chunk_len   = 77;
         size_t chunk_count = tokens.size() / chunk_len;
 
-        CheckPoint("text = %s, chunk_count = %d", text.c_str(), chunk_count);
-
+        // CheckPoint("text = %s, chunk_count = %ld", text.c_str(), chunk_count);
         for (int chunk_idx = 0; chunk_idx < chunk_count; chunk_idx++) {
             std::vector<int> chunk_tokens(tokens.begin() + chunk_idx * chunk_len,
                                           tokens.begin() + (chunk_idx + 1) * chunk_len);
             std::vector<float> chunk_weights(weights.begin() + chunk_idx * chunk_len,
                                              weights.begin() + (chunk_idx + 1) * chunk_len);
 
-            auto input_ids                 = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens);
+            auto input_ids = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens);
             struct ggml_tensor* input_ids2 = NULL;
             size_t max_token_idx           = 0;
             if (version == VERSION_XL) {
@@ -408,8 +396,11 @@ public:
                 input_ids2 = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens);
             }
 
-            CheckPoint("chunk_idx = %d", chunk_idx);
-            cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, false, &chunk_hidden_states, work_ctx);
+            // CheckPoint("chunk_idx = %d", chunk_idx);
+
+            // xxxx_8888
+            cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, false, 
+                &chunk_hidden_states, work_ctx);
             if (version == VERSION_XL && chunk_idx == 0) {
                 // ==> CheckPoint("chunk_idx == 0");
                 cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, true, &pooled, work_ctx);
@@ -424,6 +415,11 @@ public:
                 float original_mean = ggml_tensor_mean(chunk_hidden_states);
                 for (int i2 = 0; i2 < chunk_hidden_states->ne[2]; i2++) {
                     for (int i1 = 0; i1 < chunk_hidden_states->ne[1]; i1++) {
+                        // ?
+                        if (fabs(chunk_weights[i1] - 1.0) >= 0.0001) {
+                            CheckPoint("chunk_weights[%d] = %.4f", i1, chunk_weights[i1]);
+                        }
+
                         for (int i0 = 0; i0 < chunk_hidden_states->ne[0]; i0++) {
                             float value = ggml_tensor_get_f32(chunk_hidden_states, i0, i1, i2);
                             value *= chunk_weights[i1];
@@ -432,6 +428,8 @@ public:
                     }
                 }
                 float new_mean = ggml_tensor_mean(result);
+
+                CheckPoint("original_mean = %.4f, new_mean = %.4f", original_mean, new_mean);
                 ggml_tensor_scale(result, (original_mean / new_mean));
             }
             hidden_states_vec.insert(hidden_states_vec.end(), (float*)result->data, ((float*)result->data) + ggml_nelements(result));
@@ -446,41 +444,46 @@ public:
         ggml_tensor* vec = NULL;
         if (version == VERSION_XL) {
             int out_dim = 256;
-            vec         = ggml_new_tensor_1d(work_ctx, GGML_TYPE_F32, diffusion_model->unet.adm_in_channels);
+            vec = ggml_new_tensor_1d(work_ctx, GGML_TYPE_F32, diffusion_model->unet.adm_in_channels);
             // [0:1280]
             size_t offset = 0;
             memcpy(vec->data, pooled->data, ggml_nbytes(pooled));
             offset += ggml_nbytes(pooled);
 
             // original_size_as_tuple
-            float orig_width             = (float)width;
-            float orig_height            = (float)height;
-            std::vector<float> timesteps = {orig_height, orig_width};
+            // float orig_width             = (float)width;
+            // float orig_height            = (float)height;
+            // std::vector<float> timesteps = {orig_height, orig_width};
 
+            std::vector<float> timesteps = {(float)height, (float)width};
             ggml_tensor* embed_view = ggml_view_2d(work_ctx, vec, out_dim, 2, ggml_type_size(GGML_TYPE_F32) * out_dim, offset);
             offset += ggml_nbytes(embed_view);
             set_timestep_embedding(timesteps, embed_view, out_dim);
 
-            float crop_coord_top  = 0.f;
-            float crop_coord_left = 0.f;
-            timesteps             = {crop_coord_top, crop_coord_left};
-            embed_view            = ggml_view_2d(work_ctx, vec, out_dim, 2, ggml_type_size(GGML_TYPE_F32) * out_dim, offset);
+            // float crop_coord_top  = 0.f;
+            // float crop_coord_left = 0.f;
+            // timesteps             = {crop_coord_top, crop_coord_left};
+            timesteps = {0.0f, 0.0f};
+            embed_view  = ggml_view_2d(work_ctx, vec, out_dim, 2, ggml_type_size(GGML_TYPE_F32) * out_dim, offset);
             offset += ggml_nbytes(embed_view);
             set_timestep_embedding(timesteps, embed_view, out_dim);
 
-            float target_width  = (float)width;
-            float target_height = (float)height;
-            timesteps           = {target_height, target_width};
-            embed_view          = ggml_view_2d(work_ctx, vec, out_dim, 2, ggml_type_size(GGML_TYPE_F32) * out_dim, offset);
+            // float target_width  = (float)width;
+            // float target_height = (float)height;
+            // timesteps           = {target_height, target_width};
+            timesteps = {(float)height, (float)width};
+            embed_view = ggml_view_2d(work_ctx, vec, out_dim, 2, ggml_type_size(GGML_TYPE_F32) * out_dim, offset);
             offset += ggml_nbytes(embed_view);
             set_timestep_embedding(timesteps, embed_view, out_dim);
 
             GGML_ASSERT(offset == ggml_nbytes(vec));
         }
+
         return {hidden_states, vec};
     }
 
 
+    // struct sample_parameters  ???
     ggml_tensor* sample(ggml_context* work_ctx,
                         ggml_tensor* x_t,
                         ggml_tensor* noise,
@@ -491,7 +494,6 @@ public:
                         ggml_tensor* control_hint,
                         float control_strength,
                         float cfg_scale,
-                        sample_method_t method,
                         const std::vector<float>& sigmas) {
         size_t steps = sigmas.size() - 1;
         // x_t = load_tensor_from_file(work_ctx, "./rand0.bin");
@@ -502,11 +504,9 @@ public:
         struct ggml_tensor* noised_input = ggml_dup_tensor(work_ctx, x_t);
 
         if (noise == NULL) {
-            // ==> CheckPoint("noise == NULL");
             // x = x * sigmas[0]
             ggml_tensor_scale(x, sigmas[0]);
         } else {
-            // ==> CheckPoint("noise != NULL");
             // xi = x + noise * sigma_sched[0]
             ggml_tensor_scale(noise, sigmas[0]);
             ggml_tensor_add(x, noise);
@@ -586,7 +586,7 @@ public:
         };
 
         // xxxx_debug !!!
-        sample_k_diffusion(method, denoise, work_ctx, x, sigmas, rng);
+        sample_k_diffusion(denoise, work_ctx, x, sigmas, rng); // ==> update x !!!
 
         if (control_net) {
             control_net->free_control_ctx();
@@ -642,7 +642,7 @@ public:
             CheckPoint("decode == False");
             ggml_tensor_scale_input(x);
         }
-        first_stage_model->compute(n_threads, x, decode, &result);
+        first_stage_model->compute(n_threads, x, decode, &result); // got result !!!
         first_stage_model->free_compute_buffer();
         if (decode) {
             ggml_tensor_scale_output(result);
@@ -679,8 +679,8 @@ sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
                      const char* lora_model_dir_c_str,
                      int n_threads,
                      enum sd_type_t wtype,
-                     enum rng_type_t rng_type,
-                     enum schedule_t s) {
+                     enum rng_type_t rng_type) {
+
     sd_ctx_t* sd_ctx = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
     if (sd_ctx == NULL) {
         return NULL;
@@ -698,8 +698,7 @@ sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
     if (!sd_ctx->sd->load_from_file(model_path,
                                     vae_path,
                                     control_net_path,
-                                    (ggml_type)wtype,
-                                    s)) {
+                                    (ggml_type)wtype)) {
         delete sd_ctx->sd;
         sd_ctx->sd = NULL;
         free(sd_ctx);
@@ -726,7 +725,6 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
                            float cfg_scale,
                            int width,
                            int height,
-                           enum sample_method_t sample_method,
                            const std::vector<float>& sigmas,
                            int64_t seed,
                            int batch_count,
@@ -793,7 +791,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     int C = 4;
     int W = width / 8;
     int H = height / 8;
-    LOG_INFO("sampling using %s method", sampling_methods_str[sample_method]);
+
     for (int b = 0; b < batch_count; b++) {
         int64_t sampling_start = ggml_time_ms();
         int64_t cur_seed       = seed + b;
@@ -822,7 +820,6 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
                                                      image_hint,
                                                      control_strength,
                                                      cfg_scale,
-                                                     sample_method,
                                                      sigmas);
         int64_t sampling_end = ggml_time_ms();
         LOG_INFO("sampling completed, taking %.2fs", (sampling_end - sampling_start) * 1.0f / 1000);
@@ -877,7 +874,6 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
                     float cfg_scale,
                     int width,
                     int height,
-                    enum sample_method_t sample_method,
                     int sample_steps,
                     int64_t seed,
                     int batch_count,
@@ -917,7 +913,6 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
                                                cfg_scale,
                                                width,
                                                height,
-                                               sample_method,
                                                sigmas, // std::vector<float> sigmas
                                                seed,
                                                batch_count,
@@ -940,7 +935,6 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
                     float cfg_scale,
                     int width,
                     int height,
-                    sample_method_t sample_method,
                     int sample_steps,
                     float strength,
                     int64_t seed,
@@ -999,7 +993,6 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
                                                cfg_scale,
                                                width,
                                                height,
-                                               sample_method,
                                                sigma_sched,
                                                seed,
                                                batch_count,
