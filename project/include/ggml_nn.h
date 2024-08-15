@@ -10,8 +10,6 @@
 #define _GGML_NN_H_
 
 #include <ggml.h>
-#include <utility>     // std::pair, std::make_pair
-
 
 // struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tensor* x)
 // {
@@ -34,13 +32,13 @@ struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx, struct ggml_tensor
 struct ggml_tensor* ggml_nn_layer_norm(
     struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b)
 {
-    x = ggml_norm(ctx, x, eps);
+    x = ggml_norm(ctx, x, 1e-6 /*eps*/);
     x = ggml_mul(ctx, x, w);
     x = ggml_add(ctx, x, b);
     return x;
 }
 
-class LayerNorm {
+struct LayerNorm {
     int64_t normalized_shape;
 
     struct ggml_tensor *w;
@@ -51,7 +49,7 @@ class LayerNorm {
         b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, normalized_shape);
     }
 
-    void setup_weight_names(char *prefix) {
+    void setup_weight_names(const char *prefix) {
         ggml_format_name(w, "%s%s", prefix, "weight");
         ggml_format_name(b, "%s%s", prefix, "bias");        
     }
@@ -93,14 +91,12 @@ struct ggml_tensor* ggml_nn_linear(
 
 
 struct Linear {
-    // network hparams
     int64_t in_features;
     int64_t out_features;
     bool bias_flag = true;
 
-    // Weights
-    struct tensor *weight;
-    struct tensor *bias = NULL;
+    struct ggml_tensor *weight;
+    struct ggml_tensor *bias = NULL;
 
     void create_weight_tensors(struct ggml_context* ctx) {
         weight = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, in_features, out_features);
@@ -109,7 +105,7 @@ struct Linear {
         }
     }
 
-    void setup_weight_names(char *prefix) {
+    void setup_weight_names(const char *prefix) {
         ggml_format_name(weight, "%s%s", prefix, "weight");
         if (bias_flag) {
             ggml_format_name(bias, "%s%s", prefix, "bias");        
@@ -140,7 +136,7 @@ struct Conv2d {
         }        
     }
 
-    void setup_weight_names(char *prefix) {
+    void setup_weight_names(const char *prefix) {
         ggml_format_name(weight, "%s%s", prefix, "weight");
         if (bias_flag) {
             ggml_format_name(bias, "%s%s", prefix, "bias");        
@@ -152,10 +148,11 @@ struct Conv2d {
     }
 };
 
-
-class GroupNorm32 {
-    int64_t num_groups = 32;
+struct GroupNorm32 {
     int64_t num_channels;
+
+    struct ggml_tensor *weight;
+    struct ggml_tensor *bias;
 
     void create_weight_tensors(struct ggml_context* ctx) {
         // norm use GGML_TYPE_F32 !!!
@@ -163,17 +160,17 @@ class GroupNorm32 {
         bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, num_channels);
     }
 
-    void setup_weight_names(char *prefix) {
+    void setup_weight_names(const char *prefix) {
         ggml_format_name(weight, "%s%s", prefix, "weight");
         ggml_format_name(bias, "%s%s", prefix, "bias");        
     }
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
-        return ggml_nn_group_norm(ctx, x, weight, bias, num_groups);
+        return ggml_nn_group_norm(ctx, x, weight, bias, 32 /*num_groups*/);
     }
 };
 
-class ResBlock {
+struct ResBlock {
     int64_t channels;      // model_channels * (1, 1, 1, 2, 2, 4, 4, 4)
     int64_t emb_channels;  // time_embed_dim
     int64_t out_channels;  // mult * model_channels
@@ -188,77 +185,69 @@ class ResBlock {
     Conv2d out_layers_3;
     Conv2d skip_connection;
 
-
     void create_weight_tensors(struct ggml_context* ctx) {
         std::pair<int, int> padding = {kernel_size.first / 2, kernel_size.second / 2};
 
         in_layers_0.num_channels = channels; // GroupNorm32
+        in_layers_0.create_weight_tensors(ctx);
 
         // Conv2d
         in_layers_2.in_channels = channels;
         in_layers_2.out_channels = out_channels;
         in_layers_2.kernel_size = kernel_size;
         in_layers_2.padding = padding;
+        in_layers_2.create_weight_tensors(ctx);
 
         if (!skip_t_emb) { // Linear
             emb_layer_1.in_features = emb_channels;
             emb_layer_1.out_features = out_channels;
+            emb_layer_1.create_weight_tensors(ctx);
         }
 
         out_layers_0.num_channels = out_channels; // GroupNorm32
+        out_layers_0.create_weight_tensors(ctx);
 
         // Conv2d
         out_layers_3.in_channels = out_channels;
         out_layers_3.out_channels = out_channels;
         out_layers_3.kernel_size = kernel_size;
         out_layers_3.padding = padding;
+        out_layers_3.create_weight_tensors(ctx);
 
         if (out_channels != channels) { // Conv2d
             skip_connection.in_channels = channels;
             skip_connection.out_channels = out_channels;
             skip_connection.kernel_size = {1, 1};
             skip_connection.padding = {0, 0};
-        }
-
-        in_layers_0.create_weight_tensors(ctx);
-        in_layers_2.create_weight_tensors(ctx);
-        if (!skip_t_emb) {
-            emb_layer_1.create_weight_tensors(ctx);
-        }
-        out_layers_0.create_weight_tensors(ctx);
-        out_layers_3.setup_weight_names(ctx);
-
-        if (out_channels != channels) {
             skip_connection.create_weight_tensors(ctx);
         }
     }
 
-    void setup_weight_names(char *prefix) {
+    void setup_weight_names(const char *prefix) {
         char s[1024];
 
-        snprintf(s, sizeof(s), "%sin_layers.0", prefix);
+        snprintf(s, sizeof(s), "%s%s", prefix, "in_layers.0.");
         in_layers_0.setup_weight_names(s);
 
-        snprintf(s, sizeof(s), "%sin_layers.2", prefix);
+        snprintf(s, sizeof(s), "%s%s", prefix, "in_layers.2.");
         in_layers_2.setup_weight_names(s);
 
         if (!skip_t_emb) {
-            snprintf(s, sizeof(s), "%semb_layers.1", prefix);
+            snprintf(s, sizeof(s), "%s%s", prefix, "emb_layers.1.");
             emb_layer_1.setup_weight_names(s);
         }
 
-        snprintf(s, sizeof(s), "%sout_layers.0", prefix);
+        snprintf(s, sizeof(s), "%s%s", prefix, "out_layers.0.");
         out_layers_0.setup_weight_names(s);
 
-        snprintf(s, sizeof(s), "%sout_layers.3", prefix);
+        snprintf(s, sizeof(s), "%s%s", prefix, "out_layers.3.");
         out_layers_3.setup_weight_names(s);
 
         if (out_channels != channels) {
-            snprintf(s, sizeof(s), "%sskip_connection", prefix);
+            snprintf(s, sizeof(s), "%s%s", prefix, "skip_connection.");
             skip_connection.setup_weight_names(s);
         }
     }
-
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* emb = NULL) {
         // [N, c, t, h, w] => [N, c, t, h * w]
@@ -269,28 +258,28 @@ class ResBlock {
         }
 
         // in_layers
-        auto h = in_layers_0->forward(ctx, x);
-        h      = ggml_silu_inplace(ctx, h);
-        h      = in_layers_2->forward(ctx, h);  // [N, out_channels, h, w] if dims == 2 else [N, out_channels, t, h, w]
+        auto h = in_layers_0.forward(ctx, x);
+        h = ggml_silu_inplace(ctx, h);
+        h = in_layers_2.forward(ctx, h);  // [N, out_channels, h, w] if dims == 2 else [N, out_channels, t, h, w]
 
         // emb_layers
         if (!skip_t_emb) {
             auto emb_out = ggml_silu(ctx, emb);
-            emb_out = emb_layer_1->forward(ctx, emb_out);  // [N, out_channels] if dims == 2 else [N, t, out_channels]
+            emb_out = emb_layer_1.forward(ctx, emb_out);  // [N, out_channels] if dims == 2 else [N, t, out_channels]
             emb_out = ggml_reshape_4d(ctx, emb_out, 1, 1, emb_out->ne[0], emb_out->ne[1]);  // [N, out_channels, 1, 1]
 
             h = ggml_add(ctx, h, emb_out);  // [N, out_channels, h, w] if dims == 2 else [N, out_channels, t, h, w]
         }
 
         // out_layers
-        h = out_layers_0->forward(ctx, h);
+        h = out_layers_0.forward(ctx, h);
         h = ggml_silu_inplace(ctx, h);
         // dropout, skip for inference
-        h = out_layers_3->forward(ctx, h);
+        h = out_layers_3.forward(ctx, h);
 
         // skip connection
         if (out_channels != channels) {
-            x = skip_connection->forward(ctx, x);  // [N, out_channels, h, w] if dims == 2 else [N, out_channels, t, h, w]
+            x = skip_connection.forward(ctx, x);  // [N, out_channels, h, w] if dims == 2 else [N, out_channels, t, h, w]
         }
 
         h = ggml_add(ctx, h, x);
@@ -307,8 +296,7 @@ struct ggml_tensor* ggml_nn_timestep_embedding(
 }
 
 
-
-class DownSampleBlock {
+struct DownSampleBlock {
     int channels;
     int out_channels;
 
@@ -323,7 +311,7 @@ class DownSampleBlock {
         op.create_weight_tensors(ctx);
     }
 
-    void setup_weight_names(char *prefix) {
+    void setup_weight_names(const char *prefix) {
         char s[1024];
         snprintf(s, sizeof(s), "%s%s", prefix, "op.");
         op.setup_weight_names(s);
@@ -331,13 +319,13 @@ class DownSampleBlock {
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
         // x: [N, channels, h, w]
-        x = op->forward(ctx, x);
+        x = op.forward(ctx, x);
         return x;  // [N, out_channels, h/2, w/2]
     }
 };
 
 
-class UpSampleBlock {
+struct UpSampleBlock {
     int channels;
     int out_channels;
 
@@ -352,7 +340,7 @@ class UpSampleBlock {
         conv.create_weight_tensors(ctx);
     }
 
-    void setup_weight_names(char *prefix) {
+    void setup_weight_names(const char *prefix) {
         char s[1024];
         snprintf(s, sizeof(s), "%s%s", prefix, "conv.");
         conv.setup_weight_names(s);
@@ -361,11 +349,37 @@ class UpSampleBlock {
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
         // x: [N, channels, h, w]
         x = ggml_upscale(ctx, x, 2);  // [N, channels, h*2, w*2]
-        x = conv->forward(ctx, x);    // [N, out_channels, h*2, w*2]
+        x = conv.forward(ctx, x);    // [N, out_channels, h*2, w*2]
         return x;
     }
 };
 
 
+// q: [N * n_head, n_token, d_head]
+// k: [N * n_head, n_k, d_head]
+// v: [N * n_head, d_head, n_k]
+// return: [N * n_head, n_token, d_head]
+struct ggml_tensor* ggml_nn_attention(
+    struct ggml_context* ctx,
+    struct ggml_tensor* q,
+    struct ggml_tensor* k,
+    struct ggml_tensor* v,
+    bool mask = false) {
+#if defined(SD_USE_FLASH_ATTENTION) && !defined(SD_USE_CUBLAS) && !defined(SD_USE_METAL)
+    struct ggml_tensor* kqv = ggml_flash_attn(ctx, q, k, v, false);  // [N * n_head, n_token, d_head]
+#else
+    float d_head = (float)q->ne[0];
+
+    struct ggml_tensor* kq = ggml_mul_mat(ctx, k, q);  // [N * n_head, n_token, n_k]
+    kq = ggml_scale_inplace(ctx, kq, 1.0f / sqrt(d_head));
+    if (mask) {
+        kq = ggml_diag_mask_inf_inplace(ctx, kq, 0);
+    }
+    kq = ggml_soft_max_inplace(ctx, kq);
+
+    struct ggml_tensor* kqv = ggml_mul_mat(ctx, v, kq);  // [N * n_head, n_token, d_head]
+#endif
+    return kqv;
+}
 
 #endif // _GGML_NN_H_
