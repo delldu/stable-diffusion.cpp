@@ -5,7 +5,8 @@
 
 #include "tensor.h"
 // #include "include/vae.h"
-#include "include/unet.h"
+// #include "include/unet.h"
+#include "include/clip.h"
 
 struct ModelParams {
     int device = 1; // 0 -- cpu, 1 -- cuda 0
@@ -95,14 +96,16 @@ int text2image(ModelParams params)
     print_params(params);
 
     // AutoEncoderKL net;
-    UNetModel net;
+    // UNetModel net;
+    TextEncoder net;
 
     net.set_device(params.device);
     // net.load(params.model_path, "first_stage_model.");
-    net.load(params.model_path, "model.diffusion_model.");
+    // net.load(params.model_path, "model.diffusion_model.");
+    // net.load(params.model_path, "cond_stage_model.");
 
     net.start_engine();
-    // net.dump();
+    net.dump();
 
     // 
     net.stop_engine();

@@ -443,7 +443,7 @@ struct UNetModel : GGMLNetwork {
 
     size_t get_graph_size()
     {
-        return GGML_DEFAULT_GRAPH_SIZE * 5; // 2048 * 5
+        return GGML_DEFAULT_GRAPH_SIZE * 10; // 2048 * 10
     }
 
     void create_weight_tensors(struct ggml_context* ctx) {
