@@ -21,27 +21,6 @@ const char* sampling_methods_str[] = {
     "Euler",
 };
 
-/*================================================== Helper Functions ================================================*/
-
-void calculate_alphas_cumprod(float* alphas_cumprod)
-{
-    float linear_start = 0.00085f;
-    float linear_end   = 0.0120;
-    int timesteps      = TIMESTEPS;
-
-
-    float ls_sqrt = sqrtf(linear_start);
-    float le_sqrt = sqrtf(linear_end);
-    float amount  = le_sqrt - ls_sqrt;
-    float product = 1.0f;
-
-    for (int i = 0; i < timesteps; i++) {
-        float beta = ls_sqrt + amount * ((float)i / (timesteps - 1));
-        product *= 1.0f - powf(beta, 2.0f);
-        alphas_cumprod[i] = product;
-    }
-}
-
 /*=============================================== StableDiffusionGGML ================================================*/
 
 class StableDiffusionGGML {
@@ -54,7 +33,7 @@ public:
 
     SDVersion version;
 
-    std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
+    std::shared_ptr<RNG> rng = std::make_shared<RNG>();
     int n_threads            = -1;
     float scale_factor       = 0.18215f;
 
@@ -69,7 +48,6 @@ public:
     // lora_name => multiplier
     std::unordered_map<std::string, float> curr_lora_state;
 
-    // std::shared_ptr<Denoiser> denoiser = std::make_shared<CompVisDenoiser>();
     std::shared_ptr<Denoiser> denoiser = std::make_shared<Denoiser>();
 
     // std::string trigger_word = "img";  // should be user settable
@@ -78,8 +56,7 @@ public:
 
     StableDiffusionGGML(int n_threads, std::string lora_model_dir, rng_type_t rng_type)
         : n_threads(n_threads), lora_model_dir(lora_model_dir) {
-
-        rng = std::make_shared<STDDefaultRNG>();
+        rng = std::make_shared<RNG>();
     }
 
     ~StableDiffusionGGML() {
@@ -198,8 +175,9 @@ public:
         // LOG_DEBUG("mem_size %u ", params.mem_size);
         struct ggml_context* ctx = ggml_init(params);  // for  alphas_cumprod and is_using_v_parameterization check
         GGML_ASSERT(ctx != NULL);
-        ggml_tensor* alphas_cumprod_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, TIMESTEPS);
-        calculate_alphas_cumprod((float*)alphas_cumprod_tensor->data);
+        // xxxx_9999
+        // ggml_tensor* alphas_cumprod_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, TIMESTEPS);
+        // calculate_alphas_cumprod((float*)alphas_cumprod_tensor->data);
 
         // load weights
         LOG_DEBUG("loading weights");
@@ -207,9 +185,10 @@ public:
         int64_t t0 = ggml_time_ms();
 
         std::set<std::string> ignore_tensors;
-        tensors["alphas_cumprod"] = alphas_cumprod_tensor;
+        // tensors["alphas_cumprod"] = alphas_cumprod_tensor;
 
 
+        // xxxx_9999
         bool success = model_loader.load_tensors(tensors, backend, ignore_tensors);
         if (!success) {
             LOG_ERROR("load tensors from model loader failed");
@@ -282,12 +261,13 @@ public:
         int64_t t1 = ggml_time_ms();
         LOG_INFO("loading model from '%s' completed, taking %.2fs", model_path.c_str(), (t1 - t0) * 1.0f / 1000);
 
-
-        for (int i = 0; i < TIMESTEPS; i++) {
-            denoiser->schedule->alphas_cumprod[i] = ((float*)alphas_cumprod_tensor->data)[i];
-            denoiser->schedule->sigmas[i]         = std::sqrt((1 - denoiser->schedule->alphas_cumprod[i]) / denoiser->schedule->alphas_cumprod[i]);
-            denoiser->schedule->log_sigmas[i]     = std::log(denoiser->schedule->sigmas[i]);
-        }
+        // xxxx_9999
+        denoiser->init();
+        // for (int i = 0; i < TIMESTEPS; i++) {
+        //     denoiser->alphas_cumprod[i] = ((float*)alphas_cumprod_tensor->data)[i];
+        //     denoiser->sigmas[i]         = std::sqrt((1 - denoiser->alphas_cumprod[i]) / denoiser->alphas_cumprod[i]);
+        //     denoiser->log_sigmas[i]     = std::log(denoiser->sigmas[i]);
+        // }
 
         LOG_DEBUG("finished loaded file");
         ggml_free(ctx);
@@ -482,7 +462,7 @@ public:
         return {hidden_states, vec};
     }
 
-
+    // xxxx_9999
     // struct sample_parameters  ???
     ggml_tensor* sample(ggml_context* work_ctx,
                         ggml_tensor* x_t,
@@ -517,6 +497,7 @@ public:
         struct ggml_tensor* out_uncond = ggml_dup_tensor(work_ctx, x);
         struct ggml_tensor* denoised = ggml_dup_tensor(work_ctx, x);
 
+        // xxxx_9999
         auto denoise = [&](ggml_tensor* input, float sigma, int step) -> ggml_tensor* {
             if (step == 1) {
                 pretty_progress(0, (int)steps, 0);
@@ -531,7 +512,7 @@ public:
             c_out = scaling[0];
             c_in  = scaling[1];
 
-            float t = denoiser->schedule->sigma_to_t(sigma);
+            float t = denoiser->sigma_to_t(sigma);
             std::vector<float> timesteps_vec(x->ne[3], t);  // [N, ]
             auto timesteps = vector_to_ggml_tensor(work_ctx, timesteps_vec);
 
@@ -540,6 +521,7 @@ public:
 
             std::vector<struct ggml_tensor*> controls;
 
+            // xxxx_9999
             if (control_hint != NULL) {
                 control_net->compute(n_threads, noised_input, control_hint, timesteps, c, c_vector);
                 controls = control_net->controls;
@@ -556,6 +538,7 @@ public:
                                      &out_cond);
 
             // uncond
+            // xxxx_9999
             if (control_hint != NULL) {
                 control_net->compute(n_threads, noised_input, control_hint, timesteps, uc, uc_vector);
                 controls = control_net->controls;
@@ -568,6 +551,7 @@ public:
                                      controls,
                                      control_strength,
                                      &out_uncond);
+
             float* negative_data = (float*)out_uncond->data;
             float* vec_denoised  = (float*)denoised->data;
             float* vec_input     = (float*)input->data;
@@ -902,7 +886,7 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
 
     size_t t0 = ggml_time_ms();
 
-    std::vector<float> sigmas = sd_ctx->sd->denoiser->schedule->get_sigmas(sample_steps);
+    std::vector<float> sigmas = sd_ctx->sd->denoiser->get_sigmas(sample_steps);
 
     sd_image_t* result_images = generate_image(sd_ctx,
                                                work_ctx,
@@ -978,8 +962,9 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
     size_t t1 = ggml_time_ms();
     LOG_INFO("encode_first_stage completed, taking %.2fs", (t1 - t0) * 1.0f / 1000);
 
-    std::vector<float> sigmas = sd_ctx->sd->denoiser->schedule->get_sigmas(sample_steps);
-    size_t t_enc              = static_cast<size_t>(sample_steps * strength);
+    std::vector<float> sigmas = sd_ctx->sd->denoiser->get_sigmas(sample_steps);
+
+    size_t t_enc = static_cast<size_t>(sample_steps * strength);
     LOG_INFO("target t_enc is %zu steps", t_enc);
     std::vector<float> sigma_sched;
     sigma_sched.assign(sigmas.begin() + sample_steps - t_enc - 1, sigmas.end());

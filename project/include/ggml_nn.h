@@ -224,7 +224,7 @@ struct ResBlock {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "in_layers.0.");
         in_layers_0.setup_weight_names(s);
@@ -312,7 +312,7 @@ struct DownSampleBlock {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
         snprintf(s, sizeof(s), "%s%s", prefix, "op.");
         op.setup_weight_names(s);
     }
@@ -341,7 +341,7 @@ struct UpSampleBlock {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
         snprintf(s, sizeof(s), "%s%s", prefix, "conv.");
         conv.setup_weight_names(s);
     }

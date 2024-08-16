@@ -45,6 +45,7 @@ Header only file for ggml engine
 #define MAX_INPUT_TENSORS 8
 #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
+#include <vector>
 #include <unordered_map>
 
 // GGML Engine
@@ -59,7 +60,7 @@ struct GGMLEngine {
 
     // Backend
     struct ggml_backend* backend = NULL;
-    size_t backend_buffer_size = 0;
+    size_t backend_buffer_size = 0; // ONLY reference backend buffer size, not exactly  ...
     struct ggml_backend_buffer* inputs_backend_buffer = NULL;
     struct ggml_backend_buffer* weight_backend_buffer = NULL;
 
@@ -74,13 +75,46 @@ struct GGMLEngine {
     std::unordered_map<char *, TENSOR *> output_tensors = {};
 };
 
+struct TensorInfo {
+    char name[2 * GGML_MAX_NAME];
+    uint32_t n_dims;
+    uint64_t ne[GGML_MAX_DIMS];
+    enum ggml_type type;
+    uint64_t offset; // offset from start of `data`, must be a multiple of `ALIGNMENT`
+    size_t size; // ggml_nbytes()
+    size_t file_index = 0;
+
+    void dump_info() {
+        char buf[256];
+
+        int len = 0;
+        len += snprintf(buf + len, sizeof(buf) - len, "%s: %s, dims = %d [", name, ggml_type_name(type), n_dims);
+        for (int i = 0; i < n_dims; i++) {
+            len += snprintf(buf + len, sizeof(buf) - len, "%ld%s ", ne[i], (i < n_dims - 1)? ",":"]");
+        }
+        len += snprintf(buf + len, sizeof(buf) - len, ", offset = %ld, size = %ld, fileno: %ld", offset, size, file_index);
+
+        syslog_info("%s", buf);
+    }
+};
+
+struct GGMLModel {
+    std::vector<char *> file_paths;
+    std::vector<TensorInfo *> tensor_infos;
+
+    int preload(const char *model_name);
+    void remap(const char *key1, const char *key2);
+    void dump();
+    void clear();
+};
+
 struct GGMLNetwork {
 public:
     void dump();
     void set_device(int device) { m_ggml_engine.device = device; }
     bool load(const char* model_path, const char* prefix);
 
-    bool start_engine();
+    int start_engine();
     TENSOR* engine_forward(int argc, TENSOR* argv[]);
     TENSOR* get_output_tensor(char *name);
     void stop_engine();
@@ -101,14 +135,14 @@ public:
 
 protected:
     GGMLEngine m_ggml_engine = {};
-    bool m_network_init();
+    int m_network_init();
     struct ggml_cgraph* m_build_graph(int argc, struct ggml_tensor* argv[]);
     TENSOR* m_compute(int argc, struct ggml_tensor* argv[]);
     void m_clear_output_tensors();
 };
 
 void *get_cast_data(struct ggml_tensor *x, bool from_backend, ggml_type dtype);
-bool set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt, bool to_backend); // nt -- nimage tensor
+int set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt, bool to_backend); // nt -- nimage tensor
 TENSOR* get_tensor_value(struct ggml_tensor* tensor, bool from_backend);
 void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
@@ -135,7 +169,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
     static bool _same_data_shape(struct ggml_tensor* tensor, TENSOR* nt);
 
     static struct ggml_backend* _device_backend_init(int device, int* ok_device);
-    static bool _engine_backend_init(GGMLEngine* eng);
+    static int _engine_backend_init(GGMLEngine* eng);
     static bool _backend_is_cpu(struct ggml_backend* backend);
     static bool _load_weight_from_gguf(GGMLEngine* eng);
 
@@ -153,20 +187,20 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         return false;
     }
 
-    bool GGMLNetwork::start_engine()
+    int GGMLNetwork::start_engine()
     {
         syslog_info("Start Engine (%s) ...", ENGINE_VERSION);
 
         GGMLEngine* eng = &m_ggml_engine;
 
         ggml_time_init(); // Nothing for linux but something on windows
-        check_point(m_network_init());
-        check_point(_engine_backend_init(eng));
+        check_point(m_network_init() == RET_OK);
+        check_point(_engine_backend_init(eng) == RET_OK);
         _load_weight_from_gguf(eng);
 
         syslog_info("Start Engine OK.");
 
-        return true;
+        return RET_OK;
     }
 
     void GGMLNetwork::stop_engine()
@@ -200,13 +234,13 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         // system("nvidia-smi");
     }
 
-    bool GGMLNetwork::m_network_init()
+    int GGMLNetwork::m_network_init()
     {
         int num_tensors;
         GGMLEngine* eng = &m_ggml_engine;
 
         if (eng->weight_context) // do not repeat init ...
-            return true;
+            return RET_OK;
 
         int64_t start_time = ggml_time_ms();
 
@@ -245,7 +279,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
             };
 
             eng->weight_context = ggml_init(params);
-            check_point(eng->weight_context);
+            check_point(eng->weight_context != NULL);
 
             // eng->weight_context != NULL
             {
@@ -254,21 +288,21 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
             }
         }
 
-        check_point(eng->weight_context);
+        check_point(eng->weight_context != NULL);
 
         syslog_debug("Network initialising spends %ld ms", ggml_time_ms() - start_time);
 
         return true;
     }
 
-    static bool _engine_backend_init(GGMLEngine* eng)
+    static int _engine_backend_init(GGMLEngine* eng)
     {
-        check_point(eng->weight_context);
+        check_point(eng->weight_context != NULL);
 
         // Create backend and backend buffer according to network ...
         {
             eng->backend = _device_backend_init(eng->device, &eng->device);
-            check_point(eng->backend);
+            check_point(eng->backend != NULL);
 
             eng->weight_backend_buffer = ggml_backend_alloc_ctx_tensors(eng->weight_context, eng->backend);
             // check_point(eng->weight_backend_buffer != NULL);
@@ -286,7 +320,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
     #endif        
         }
 
-        return true;
+        return RET_OK;
     }
 
     void GGMLNetwork::dump()
@@ -325,7 +359,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
     static bool _load_weight_from_gguf(GGMLEngine* eng)
     {
-        check_point(eng);
+        check_point(eng != NULL);
         if (strlen(eng->model_name) < 1) // Skip if no-existed model ...
             return false;
 
@@ -333,20 +367,21 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         char* model_filename = NULL;
         struct gguf_context* ctx_gguf = NULL;
-        struct {
-            struct ggml_context* context;
-        } weight;
+        // struct {
+        //     struct ggml_context* context;
+        // } weight;
+        struct ggml_context* weight_context = NULL;
 
         // Loading weight
         {
             syslog_info("Loading weight from '%s' with prefix '%s' ...", eng->model_name, eng->weight_prefix);
 
             model_filename = _find_model_path(eng->model_name);
-            check_point(model_filename);
+            check_point(model_filename != NULL);
 
             struct gguf_init_params params = {
                 /*.no_alloc   =*/false,
-                /*.ctx        =*/&weight.context,
+                /*.ctx        =*/&weight_context,
             };
 
             ctx_gguf = gguf_init_from_file(model_filename, params);
@@ -355,8 +390,8 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
                 free(model_filename);
             }
 
-            check_point(ctx_gguf);
-            check_point(weight.context);
+            check_point(ctx_gguf != NULL);
+            check_point(weight_context != NULL);
         }
 
         // Network loading weight ...
@@ -365,7 +400,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
             struct ggml_tensor* d = NULL;
             bool cpu_backend = _backend_is_cpu(eng->backend);
 
-            for_each_context_tensor(weight.context)
+            for_each_context_tensor(weight_context)
             {
                 if (memcmp(t->name, eng->weight_prefix, prefix_len) != 0) {
                     syslog_debug("Skip '%s' for mismatch '%s' ...", t->name, eng->weight_prefix);
@@ -410,7 +445,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         // Clean up
         {
             gguf_free(ctx_gguf);
-            ggml_free(weight.context);
+            ggml_free(weight_context);
             free(model_filename);
         }
 
@@ -466,6 +501,10 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
     void GGMLNetwork::m_clear_output_tensors()
     {
         for (auto& pair : m_ggml_engine.output_tensors) {
+            char *n = (char *)pair.first;
+            if (n != NULL) {
+                free(n);
+            }
             TENSOR *t =  (TENSOR *)pair.second;
             if (tensor_valid(t)) {
                 tensor_destroy(t);
@@ -514,7 +553,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
                 if (leaf->flags & GGML_TENSOR_FLAG_OUTPUT) {
                     // Saving leafs ...
                     TENSOR *yt = get_tensor_value(leaf, true /*from_backend*/);
-                    m_ggml_engine.output_tensors[leaf->name] = yt;
+                    m_ggml_engine.output_tensors[strdup(leaf->name)] = yt;
                 }
             }
             for (int i = 0; i < gf->n_nodes; i++) {
@@ -522,7 +561,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
                 if (node->flags & GGML_TENSOR_FLAG_OUTPUT) {
                     // Saving nodes ...
                     TENSOR *yt = get_tensor_value(node, true /*from_backend*/);
-                    m_ggml_engine.output_tensors[node->name] = yt;
+                    m_ggml_engine.output_tensors[strdup(node->name)] = yt;
                 }
             }
         }
@@ -729,9 +768,9 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         return nt;
     }
 
-    bool set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt, bool to_backend = false)
+    int set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt, bool to_backend = false)
     {
-        check_point(tensor);
+        check_point(tensor != NULL);
         check_tensor(nt);
 
         // B, C, H, W
@@ -746,7 +785,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
             } else {
                 memcpy(tensor->data, nt->data, nb);
             }
-            return true;
+            return RET_OK;
         }
 
         // 2) Convert nt->data to tensor->data
@@ -765,7 +804,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         }
         free(dst_data);
 
-        return true;
+        return RET_OK;
     }
 
     void *get_cast_data(struct ggml_tensor *x, bool from_backend, ggml_type dtype)
@@ -827,5 +866,98 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         return dst_data; // need free dst_data
     }
+
+    int GGMLModel::preload(const char *model_name)
+    {
+        char *file_name = _find_model_path(model_name);
+        check_point(file_name != NULL);
+
+        file_paths.push_back(file_name);
+        size_t file_index = file_paths.size() - 1;
+
+        gguf_context* ctx_gguf_ = NULL;
+        ggml_context* ctx_meta_ = NULL;
+        ctx_gguf_ = gguf_init_from_file(file_name, {true, &ctx_meta_});
+        check_point(ctx_gguf_ != NULL);
+
+        int n_tensors = gguf_get_n_tensors(ctx_gguf_);
+
+        size_t total_size  = 0;
+        size_t data_offset = gguf_get_data_offset(ctx_gguf_);
+
+        for (int i = 0; i < n_tensors; i++) {
+            char *name = gguf_get_tensor_name(ctx_gguf_, i);
+            struct ggml_tensor* dummy = ggml_get_tensor(ctx_meta_, name);
+
+            TensorInfo *info = (TensorInfo *)calloc(1, sizeof(TensorInfo));
+            check_point(info != NULL);
+
+            snprintf(info->name, sizeof(info->name), "%s", name);
+            info->type = gguf_get_tensor_type(ctx_gguf_, i); // dummy->type;
+            info->offset = data_offset + gguf_get_tensor_offset(ctx_gguf_, i);
+            info->file_index = file_index;
+
+            info->n_dims = ggml_n_dims(dummy);
+            for (int j = 0; j < info->n_dims; j++)
+                info->ne[j] = dummy->ne[info->n_dims - j - 1]; // Reverse 
+            info->size = ggml_nbytes(dummy);
+
+            tensor_infos.push_back(info); // Save to tensor_infos
+        }
+
+        gguf_free(ctx_gguf_);
+        ggml_free(ctx_meta_);
+
+        return RET_OK;
+    }
+
+   void GGMLModel::remap(const char *key1, const char *key2)
+    {
+        TensorInfo *t;
+        char *find, buf[2 * GGML_MAX_NAME];
+        int klen = strlen(key1);
+
+        if (klen == 0) // nothing to do ...
+            return;
+
+        for (size_t i = 0; i < tensor_infos.size(); i++) {
+            t = tensor_infos[i];
+            find = strstr(t->name, key1);
+            if (find != NULL) {
+                *find = '\0';
+                snprintf(buf, sizeof(buf), "%s%s%s", t->name, key2, find + klen);
+                snprintf(t->name, sizeof(t->name), "%s", buf);
+            }
+        }
+    }
+
+    void GGMLModel::dump()
+    {
+        syslog_info("Model Files:");
+        for (size_t i = 0; i < file_paths.size(); i++) {
+            syslog_info("%ld: %s", i, file_paths[i]);
+        }
+
+        syslog_info("Model Tensors:");
+        for (size_t i = 0; i < tensor_infos.size(); i++) {
+            tensor_infos[i]->dump_info();
+        }
+    }
+
+    void GGMLModel::clear()
+    {
+        for (auto it = file_paths.begin(); it != file_paths.end(); ++it) {
+            free(*it);
+        }
+        file_paths.clear();
+
+        for (auto it = tensor_infos.begin(); it != tensor_infos.end(); ++it) {
+            free(*it);
+        }
+        tensor_infos.clear();
+    }
+
+
+
 #endif // GGML_ENGINE_IMPLEMENTATION
 

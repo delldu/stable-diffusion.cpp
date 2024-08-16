@@ -510,6 +510,7 @@ void preprocess_tensor(TensorStorage tensor_storage,
     //     (ends_with(new_name, "proj_in.weight") || ends_with(new_name, "proj_out.weight"))) {
     //     tensor_storage.unsqueeze();
     // }
+    // ==> CheckPoint("----------------preprocess_tensor------------------------");
 
     if ((ends_with(new_name, "proj_in.weight") || ends_with(new_name, "proj_out.weight"))) {
         tensor_storage.unsqueeze();
@@ -768,12 +769,21 @@ bool ModelLoader::init_from_gguf_file(const std::string& file_path, const std::s
     size_t data_offset = gguf_get_data_offset(ctx_gguf_);
     for (int i = 0; i < n_tensors; i++) {
         std::string name          = gguf_get_tensor_name(ctx_gguf_, i);
+        if (name.size() >= GGML_MAX_NAME) {
+            CheckPoint("name = %s is too long(%ld)", name.c_str(), name.size());
+        }
+
         struct ggml_tensor* dummy = ggml_get_tensor(ctx_meta_, name.c_str());
         size_t offset             = data_offset + gguf_get_tensor_offset(ctx_gguf_, i);
 
         // LOG_DEBUG("%s", name.c_str());
-
         TensorStorage tensor_storage(prefix + name, dummy->type, dummy->ne, ggml_n_dims(dummy), file_index, offset);
+        if (tensor_storage.name.size() >= GGML_MAX_NAME) {
+            CheckPoint("name = %s is too long(%ld)", tensor_storage.name.c_str(), tensor_storage.name.size());
+        }
+
+        // CheckPoint("prefix = %s, name = %s, file_index = %d, offset = %ld", prefix.c_str(), name.c_str(), file_index, offset);
+        // CheckPoint("tensor_storage = %s", tensor_storage.to_string().c_str());
 
         GGML_ASSERT(ggml_nbytes(dummy) == tensor_storage.nbytes());
 
@@ -1507,6 +1517,7 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb, ggml_backend
     return success;
 }
 
+// xxxx_9999
 bool ModelLoader::load_tensors(std::map<std::string, struct ggml_tensor*>& tensors,
                                ggml_backend_t backend,
                                std::set<std::string> ignore_tensors) {
@@ -1608,6 +1619,10 @@ bool ModelLoader::save_to_gguf_file(const std::string& file_path, ggml_type type
             return false;
         }
         ggml_set_name(tensor, name.c_str());
+        if (name.size() >= GGML_MAX_NAME) {
+            // python -m ggml_engine.gguf.dump /tmp/output/ggf
+            CheckPoint("name = %s is too long (%ld).", name.c_str(), name.size());
+        }
 
         // LOG_DEBUG("%s %d %s %d[%d %d %d %d] %d[%d %d %d %d]", name.c_str(),
         // ggml_nbytes(tensor), ggml_type_name(tensor_type),

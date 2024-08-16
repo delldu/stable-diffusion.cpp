@@ -11,35 +11,41 @@
 #include <set>
 #include <codecvt>
 
-
 enum SDVersion {
     VERSION_1_x,
-    VERSION_2_x,
     VERSION_XL,
-    VERSION_SVD,
-    VERSION_COUNT,
 };
 
+#pragma GCC diagnostic ignored "-Wformat-truncation"
 
+static std::vector<std::pair<std::string, float>> parse_prompt_attention(const std::string& text);
+static std::vector<std::pair<int, std::u32string>> bytes_to_unicode();
+static std::u32string utf8_to_utf32(const std::string& utf8_str);
+static std::string utf32_to_utf8(const std::u32string& utf32_str);
+static std::u32string unicode_value_to_utf32(int unicode_value);
+// -----------------------------------------------------------------------------------------------------------------
 
-/*================================================== CLIPTokenizer ===================================================*/
-std::u32string utf8_to_utf32(const std::string& utf8_str) {
+static std::u32string utf8_to_utf32(const std::string& utf8_str)
+{
     std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
     return converter.from_bytes(utf8_str);
 }
 
-std::string utf32_to_utf8(const std::u32string& utf32_str) {
+static std::string utf32_to_utf8(const std::u32string& utf32_str)
+{
     std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
     return converter.to_bytes(utf32_str);
 }
 
-std::u32string unicode_value_to_utf32(int unicode_value) {
+static std::u32string unicode_value_to_utf32(int unicode_value)
+{
     std::u32string utf32_string = {static_cast<char32_t>(unicode_value)};
     return utf32_string;
 }
 
-
-std::pair<std::unordered_map<std::string, float>, std::string> extract_and_remove_lora(std::string text) {
+#if 0
+std::pair<std::unordered_map<std::string, float>, std::string> extract_and_remove_lora(std::string text)
+{
     std::regex re("<lora:([^:]+):([^>]+)>");
     std::smatch matches;
     std::unordered_map<std::string, float> filename2multiplier;
@@ -63,18 +69,19 @@ std::pair<std::unordered_map<std::string, float>, std::string> extract_and_remov
 
     return std::make_pair(filename2multiplier, text);
 }
+#endif
 
-const std::string UNK_TOKEN = "<|endoftext|>";
 const std::string BOS_TOKEN = "<|startoftext|>";
 const std::string EOS_TOKEN = "<|endoftext|>";
 const std::string PAD_TOEKN = "<|endoftext|>";
 
-const int UNK_TOKEN_ID = 49407;
 const int BOS_TOKEN_ID = 49406;
 const int EOS_TOKEN_ID = 49407;
 const int PAD_TOKEN_ID = 49407;
 
-std::vector<std::pair<int, std::u32string>> bytes_to_unicode() {
+
+static std::vector<std::pair<int, std::u32string>> bytes_to_unicode()
+{
     std::vector<std::pair<int, std::u32string>> byte_unicode_pairs;
     std::set<int> byte_set;
     for (int b = static_cast<int>('!'); b <= static_cast<int>('~'); ++b) {
@@ -323,7 +330,7 @@ public:
 };
 
 
-std::vector<std::pair<std::string, float>> parse_prompt_attention(const std::string& text) {
+static std::vector<std::pair<std::string, float>> parse_prompt_attention(const std::string& text) {
     std::vector<std::pair<std::string, float>> res;
     std::vector<int> round_brackets;
     std::vector<int> square_brackets;
@@ -397,7 +404,6 @@ std::vector<std::pair<std::string, float>> parse_prompt_attention(const std::str
 }
 
 /*================================================ FrozenCLIPEmbedder ================================================*/
-
 struct MultiheadAttention {
     int64_t embed_dim;
     int64_t n_head;
@@ -431,7 +437,7 @@ struct MultiheadAttention {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "q_proj.");
         q_proj.setup_weight_names(s);
@@ -496,10 +502,11 @@ struct CLIPMLP {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "fc1.");
         fc1.setup_weight_names(s);
+
         snprintf(s, sizeof(s), "%s%s", prefix, "fc2.");
         fc2.setup_weight_names(s);
     }
@@ -548,7 +555,7 @@ struct CLIPLayer {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "self_attn.");
         self_attn.setup_weight_names(s);
@@ -588,7 +595,7 @@ struct CLIPEncoder {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         for (int i = 0; i < n_layer; i++) {
             snprintf(s, sizeof(s), "%s%s%d.", prefix, "layers.", i);
@@ -671,7 +678,6 @@ struct CLIPTextModel {
     LayerNorm final_layer_norm;
 
     // ----------------------------------------------------------------------------------
-
     void create_weight_tensors(struct ggml_context* ctx) {
         if (version == OPEN_CLIP_VIT_H_14) {
             hidden_size       = 1024;
@@ -696,12 +702,6 @@ struct CLIPTextModel {
         embeddings.num_positions = n_token;
         embeddings.create_weight_tensors(ctx);
 
-        // xxxx_debug
-        // int64_t d_model;
-        // int64_t n_head;
-        // int64_t intermediate_size;
-        // n_layer, hidden_size, n_head, intermediate_size
-
         encoder.n_layer = n_layer;
         encoder.d_model = hidden_size;
         encoder.n_head = n_head;
@@ -713,7 +713,7 @@ struct CLIPTextModel {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         if (version == OPEN_CLIP_VIT_BIGG_14) {
             ggml_format_name(text_projection, "%s%s", prefix, "text_projection.");
@@ -738,12 +738,8 @@ struct CLIPTextModel {
     }
 
 
-    struct ggml_tensor* forward(struct ggml_context* ctx,
-                                struct ggml_tensor* input_ids,
-                                size_t max_token_idx = 0,
-                                bool return_pooled   = false) {
-
-
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids,
+                                size_t max_token_idx = 0, bool return_pooled   = false) {
         auto x = embeddings.forward(ctx, input_ids);  // [N, n_token, hidden_size], xxxx_debug
         x = encoder.forward(ctx, x, return_pooled ? -1 : clip_skip, true);
         if (return_pooled) {
@@ -763,8 +759,8 @@ struct CLIPTextModel {
 
 
 struct TextEncoder : GGMLNetwork {
-    SDVersion version = VERSION_1_x;
-    int clip_skip = -1;
+    // SDVersion version = VERSION_1_x;
+    // int clip_skip = -1;
 
     CLIPTokenizer tokenizer;
     CLIPTextModel text_model;
@@ -775,52 +771,38 @@ struct TextEncoder : GGMLNetwork {
         text_model2.set_clip_skip(clip_skip);
     }
 
-
     void create_weight_tensors(struct ggml_context* ctx) {
-        CheckPoint("CheckPoint 1 ...");
-
-        if (clip_skip <= 0) {
-            clip_skip = 1;
-            if (version == VERSION_2_x || version == VERSION_XL) {
-                clip_skip = 2;
-            }
-        }
+        // if (clip_skip <= 0) {
+        //     clip_skip = 1;
+        //     if (version == VERSION_XL) {
+        //         clip_skip = 2;
+        //     }
+        // }
+        // clip_skip = 2;
         text_model.version = OPENAI_CLIP_VIT_L_14;
-        text_model.clip_skip_value = clip_skip;
+        text_model.clip_skip_value = 2;
         text_model.create_weight_tensors(ctx);
 
-        CheckPoint("CheckPoint 2 ...");
-
         text_model2.version = OPEN_CLIP_VIT_BIGG_14;
-        text_model2.clip_skip_value = clip_skip;
+        text_model2.clip_skip_value = 2;
         text_model2.create_weight_tensors(ctx);
-
-        CheckPoint("CheckPoint 3 ...");
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
-        snprintf(s, sizeof(s), "%s%s", prefix, "transformer.text_model.");
+        // snprintf(s, sizeof(s), "%s%s", prefix, "transformer.text_model.");
+        snprintf(s, sizeof(s), "%s%s", prefix, "text_model.");
         text_model.setup_weight_names(s);
 
-        CheckPoint("CheckPoint 4 ...");
-
-
-        snprintf(s, sizeof(s), "%s%s", prefix, "1.transformer.text_model.");
+        // snprintf(s, sizeof(s), "%s%s", prefix, "1.transformer.text_model.");
+        snprintf(s, sizeof(s), "%s%s", prefix, "text_model2.");
         text_model2.setup_weight_names(s);
-
-        CheckPoint("CheckPoint 5 ...");
     }
 
 
-    struct ggml_tensor* forward(struct ggml_context* ctx,
-                                struct ggml_tensor* input_ids,
-                                struct ggml_tensor* input_ids2, // negative prompt ...
-                                size_t max_token_idx = 0,
-                                bool return_pooled   = false) {
-        CheckPoint("return_pooled = %d", return_pooled); // false | true
-
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids, struct ggml_tensor* input_ids2, // negative prompt ...
+                                size_t max_token_idx = 0, bool return_pooled   = false) {
 
         size_t N = input_ids->ne[1];
         size_t n_token = input_ids->ne[0];

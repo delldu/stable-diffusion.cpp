@@ -80,6 +80,7 @@ __STATIC_INLINE__ ggml_fp16_t ggml_tensor_get_f16(const ggml_tensor* tensor, int
     return *(ggml_fp16_t*)((char*)(tensor->data) + i * tensor->nb[3] + j * tensor->nb[2] + k * tensor->nb[1] + l * tensor->nb[0]);
 }
 
+#if 0
 static struct ggml_tensor* get_tensor_from_graph(struct ggml_cgraph* gf, const char* name) {
     struct ggml_tensor* res = NULL;
     for (int i = 0; i < gf->n_nodes; i++) {
@@ -98,6 +99,7 @@ static struct ggml_tensor* get_tensor_from_graph(struct ggml_cgraph* gf, const c
     }
     return res;
 }
+#endif
 
 __STATIC_INLINE__ void print_ggml_tensor(struct ggml_tensor* tensor, bool shape_only = false, const char* mark = "") {
     printf("%s (%s): shape(%zu, %zu, %zu, %zu)\n", mark, ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1], tensor->ne[2], tensor->ne[3]);
@@ -134,6 +136,7 @@ __STATIC_INLINE__ void print_ggml_tensor(struct ggml_tensor* tensor, bool shape_
     }
 }
 
+#if 0
 __STATIC_INLINE__ ggml_tensor* load_tensor_from_file(ggml_context* ctx, const std::string& file_path) {
     std::ifstream file(file_path, std::ios::binary);
     if (!file.is_open()) {
@@ -166,6 +169,7 @@ __STATIC_INLINE__ ggml_tensor* load_tensor_from_file(ggml_context* ctx, const st
     file.read(reinterpret_cast<char*>(tensor->data), ggml_nbytes(tensor));
     return tensor;
 }
+#endif
 
 // __STATIC_INLINE__ void save_tensor_to_file(const std::string& file_name, ggml_tensor* tensor, const std::string & name) {
 //     std::string file_name_ = file_name + ".tensor";
@@ -228,7 +232,7 @@ __STATIC_INLINE__ uint8_t* sd_tensor_to_image(struct ggml_tensor* input) {
     for (int iy = 0; iy < height; iy++) {
         for (int ix = 0; ix < width; ix++) {
             for (int k = 0; k < channels; k++) {
-                float value                                               = ggml_tensor_get_f32(input, ix, iy, k);
+                float value = ggml_tensor_get_f32(input, ix, iy, k);
                 *(image_data + iy * width * channels + ix * channels + k) = (uint8_t)(value * 255.0f);
             }
         }
@@ -236,6 +240,7 @@ __STATIC_INLINE__ uint8_t* sd_tensor_to_image(struct ggml_tensor* input) {
     return image_data;
 }
 
+#if 0
 __STATIC_INLINE__ uint8_t* sd_tensor_to_mul_image(struct ggml_tensor* input, int idx) {
     int64_t width    = input->ne[0];
     int64_t height   = input->ne[1];
@@ -245,13 +250,14 @@ __STATIC_INLINE__ uint8_t* sd_tensor_to_mul_image(struct ggml_tensor* input, int
     for (int iy = 0; iy < height; iy++) {
         for (int ix = 0; ix < width; ix++) {
             for (int k = 0; k < channels; k++) {
-                float value                                               = ggml_tensor_get_f32(input, ix, iy, k, idx);
+                float value = ggml_tensor_get_f32(input, ix, iy, k, idx);
                 *(image_data + iy * width * channels + ix * channels + k) = (uint8_t)(value * 255.0f);
             }
         }
     }
     return image_data;
 }
+#endif
 
 __STATIC_INLINE__ void sd_image_to_tensor(const uint8_t* image_data,
                                           struct ggml_tensor* output,

@@ -325,7 +325,7 @@ struct Encoder {
         ggml_format_name(conv_out_w, "%s%s", prefix, "conv_out.weight");
         ggml_format_name(conv_out_b, "%s%s", prefix, "conv_out.bias");
 
-        char s[1024];
+        char s[GGML_MAX_NAME];
         snprintf(s, sizeof(s), "%s%s", prefix, "mid.block_1.");
         mid.block_1.setup_weight_names(s);
 
@@ -460,7 +460,7 @@ struct Decoder {
     }
 
     void setup_weight_names(const char* prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         ggml_format_name(norm_out_w, "%s%s", prefix, "norm_out.weight");
         ggml_format_name(norm_out_b, "%s%s", prefix, "norm_out.bias");

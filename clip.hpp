@@ -69,7 +69,7 @@ std::vector<std::pair<int, std::u32string>> bytes_to_unicode() {
 
 // Ref: https://github.com/openai/CLIP/blob/main/clip/simple_tokenizer.py
 
-typedef std::function<bool(std::string&, std::vector<int32_t>&)> on_new_token_cb_t;
+// typedef std::function<bool(std::string&, std::vector<int32_t>&)> on_new_token_cb_t;
 
 class CLIPTokenizer {
 private:

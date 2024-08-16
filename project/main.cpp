@@ -95,20 +95,34 @@ int text2image(ModelParams params)
 
     print_params(params);
 
-    // AutoEncoderKL net;
-    // UNetModel net;
-    TextEncoder net;
 
-    net.set_device(params.device);
-    // net.load(params.model_path, "first_stage_model.");
-    // net.load(params.model_path, "model.diffusion_model.");
+    GGMLModel weight;
+    weight.preload(params.model_path);
+    weight.remap("first_stage_model.", "vae.");
+    weight.remap("model.diffusion_model.", "unet.");
+    weight.remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
+    weight.remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
+
+    CheckPoint("OK");
+    
+    weight.dump();
+
+    weight.clear();    
+
+    // // AutoEncoderKL net;
+    // // UNetModel net;
+    // TextEncoder net;
+
+    // net.set_device(params.device);
+    // // net.load(params.model_path, "first_stage_model.");
+    // // net.load(params.model_path, "model.diffusion_model.");
     // net.load(params.model_path, "cond_stage_model.");
 
-    net.start_engine();
-    net.dump();
+    // net.start_engine();
+    // net.dump();
 
-    // 
-    net.stop_engine();
+    // // 
+    // net.stop_engine();
 
 
     return 0;

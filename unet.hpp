@@ -285,7 +285,10 @@ public:
         size_t len_mults    = channel_mult.size();
         int input_block_idx = 0;
         int ds = 1;
+#if 0        
+        CheckPoint("--------------------------------------{");
         for (int i = 0; i < len_mults; i++) { // i == 0, 1, 2
+            CheckPoint("===> i = %d", i);
             // int mult = channel_mult[i];
             for (int j = 0; j < num_res_blocks; j++) { // j = 0, 1
                 input_block_idx += 1;
@@ -296,27 +299,19 @@ public:
                 // name = input_blocks.5.0
                 // name = input_blocks.7.0
                 // name = input_blocks.8.0
+                CheckPoint("h = resblock_forward(\"%s\", ctx, h, emb);", name.c_str());
                 h = resblock_forward(name, ctx, h, emb);  // [N, mult*model_channels, h, w]
                 // attention_resolutions = {4, 2}, ds = 1, 2, 4(i == 2)
-#if 0                
-                if (std::find(attention_resolutions.begin(), attention_resolutions.end(), ds) != attention_resolutions.end()) {
-                    std::string name = "input_blocks." + std::to_string(input_block_idx) + ".1";
-                    // name = input_blocks.4.1
-                    // name = input_blocks.5.1
-                    // name = input_blocks.7.1
-                    // name = input_blocks.8.1
-                    h  = attention_layer_forward(name, ctx, h, context);  // [N, mult*model_channels, h, w]
-                }
-#else
                 if (i == 2) {
                     std::string name = "input_blocks." + std::to_string(input_block_idx) + ".1";
                     // name = input_blocks.4.1
                     // name = input_blocks.5.1
                     // name = input_blocks.7.1
                     // name = input_blocks.8.1
+                    CheckPoint("h = attention_layer_forward(\"%s\", ctx, h, context);", name.c_str());
                     h  = attention_layer_forward(name, ctx, h, context);  // [N, mult*model_channels, h, w]
                 }
-#endif                
+                CheckPoint("hs.push_back(h);");
                 hs.push_back(h);
             }
             if (i != len_mults - 1) { // i == 0 | 1
@@ -328,10 +323,40 @@ public:
                 // name = input_blocks.6.0
                 auto block  = std::dynamic_pointer_cast<DownSampleBlock>(blocks[name]);
 
+                CheckPoint("name = %s, h = block->forward(ctx, h)", name.c_str());
                 h = block->forward(ctx, h);  // [N, mult*model_channels, h/(2^(i+1)), w/(2^(i+1))]
+                CheckPoint("hs.push_back(h);");
                 hs.push_back(h);
             }
         }
+        CheckPoint("--------------------------------------} input_block_idx = %d", input_block_idx);
+#else
+        // i == 0
+        h = resblock_forward("input_blocks.1.0", ctx, h, emb);
+        hs.push_back(h);
+        h = resblock_forward("input_blocks.2.0", ctx, h, emb);
+        hs.push_back(h);
+        auto block  = std::dynamic_pointer_cast<DownSampleBlock>(blocks["input_blocks.3.0"]);
+        h = block->forward(ctx, h);
+        hs.push_back(h);
+
+        // i == 1
+        h = resblock_forward("input_blocks.4.0", ctx, h, emb);
+        hs.push_back(h);
+        h = resblock_forward("input_blocks.5.0", ctx, h, emb);
+        hs.push_back(h);
+        block  = std::dynamic_pointer_cast<DownSampleBlock>(blocks["input_blocks.6.0"]);
+        h = block->forward(ctx, h);
+        hs.push_back(h);
+        
+        // i == 2
+        h = resblock_forward("input_blocks.7.0", ctx, h, emb);
+        h = attention_layer_forward("input_blocks.7.1", ctx, h, context);
+        hs.push_back(h);
+        h = resblock_forward("input_blocks.8.0", ctx, h, emb);
+        h = attention_layer_forward("input_blocks.8.1", ctx, h, context);
+        hs.push_back(h);
+#endif
         // [N, 4*model_channels, h/8, w/8]
 
         // middle_block
@@ -345,11 +370,17 @@ public:
         }
         int control_offset = controls.size() - 2;
 
+#if 0
+        CheckPoint("================================================================={");
+
         // output_blocks
         // CheckPoint(" --- hs.size() = %ld", hs.size()); // hs.size() = 9
         int output_block_idx = 0;
         for (int i = (int)len_mults - 1; i >= 0; i--) { // i = 2, 1, 0
+            CheckPoint("// case i == %d", i);
+
             for (int j = 0; j < num_res_blocks + 1; j++) { // j = 0, 1, 2
+                CheckPoint("auto h_skip = hs.back();");        
                 auto h_skip = hs.back();
                 hs.pop_back();
 
@@ -371,24 +402,11 @@ public:
                 // name = output_blocks.7.0
                 // name = output_blocks.8.0
 
+                CheckPoint("h = resblock_forward(\"%s\", ctx, h, emb);", name.c_str());        
                 h = resblock_forward(name, ctx, h, emb);
 
                 int up_sample_idx = 1;
                 // attention_resolutions = {4, 2}, ds = 4, 2, 1
-#if 0                
-                if (std::find(attention_resolutions.begin(), attention_resolutions.end(), ds) != attention_resolutions.end()) {
-                    std::string name = "output_blocks." + std::to_string(output_block_idx) + ".1";
-                    // name = output_blocks.0.1
-                    // name = output_blocks.1.1
-                    // name = output_blocks.2.1
-                    // name = output_blocks.3.1
-                    // name = output_blocks.4.1
-                    // name = output_blocks.5.1
-                    h = attention_layer_forward(name, ctx, h, context);
-
-                    up_sample_idx++;
-                }
-#else
                 if (i == 2 || i == 1) {
                     std::string name = "output_blocks." + std::to_string(output_block_idx) + ".1";
                     // name = output_blocks.0.1
@@ -397,18 +415,17 @@ public:
                     // name = output_blocks.3.1
                     // name = output_blocks.4.1
                     // name = output_blocks.5.1
+                    CheckPoint("h = attention_layer_forward(\"%s\", ctx, h, context);", name.c_str());        
                     h = attention_layer_forward(name, ctx, h, context);
-
                     up_sample_idx++;
                 }
 
-#endif                
                 if (i > 0 && j == num_res_blocks) {
                     std::string name = "output_blocks." + std::to_string(output_block_idx) + "." + std::to_string(up_sample_idx);
                     // name = output_blocks.2.2
                     // name = output_blocks.5.2
+                    CheckPoint("h = block->forward(ctx, h); %s", name.c_str());        
                     auto block = std::dynamic_pointer_cast<UpSampleBlock>(blocks[name]);
-
                     h = block->forward(ctx, h);
 
                     ds /= 2;
@@ -417,6 +434,97 @@ public:
                 output_block_idx += 1;
             } // end of j 
         }
+        CheckPoint("=================================================================}");
+#else
+        // case i == 2
+        auto h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);
+        h = resblock_forward("output_blocks.0.0", ctx, h, emb);
+        h = attention_layer_forward("output_blocks.0.1", ctx, h, context);
+        h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);
+        h = resblock_forward("output_blocks.1.0", ctx, h, emb);
+        h = attention_layer_forward("output_blocks.1.1", ctx, h, context);
+        h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);        
+        h = resblock_forward("output_blocks.2.0", ctx, h, emb);
+        h = attention_layer_forward("output_blocks.2.1", ctx, h, context);
+        auto block2 = std::dynamic_pointer_cast<UpSampleBlock>(blocks["output_blocks.2.2"]);
+        h = block2->forward(ctx, h);
+
+        // case i == 1
+        h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);        
+        h = resblock_forward("output_blocks.3.0", ctx, h, emb);
+        h = attention_layer_forward("output_blocks.3.1", ctx, h, context);
+        h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);        
+        h = resblock_forward("output_blocks.4.0", ctx, h, emb);
+        h = attention_layer_forward("output_blocks.4.1", ctx, h, context);
+        h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);        
+        h = resblock_forward("output_blocks.5.0", ctx, h, emb);
+        h = attention_layer_forward("output_blocks.5.1", ctx, h, context);
+
+        block2 = std::dynamic_pointer_cast<UpSampleBlock>(blocks["output_blocks.5.2"]);
+        h = block2->forward(ctx, h);
+
+        // case i == 0
+        h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);        
+        h = resblock_forward("output_blocks.6.0", ctx, h, emb);
+        h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);        
+        h = resblock_forward("output_blocks.7.0", ctx, h, emb);
+        h_skip = hs.back(); hs.pop_back();
+        if (controls.size() > 0) {
+            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
+            h_skip  = ggml_add(ctx, h_skip, cs);  // control net condition
+            control_offset--;
+        }
+        h = ggml_concat(ctx, h, h_skip, 2);        
+        h = resblock_forward("output_blocks.8.0", ctx, h, emb);
+#endif
 
         // out
         h = out_0->forward(ctx, h);

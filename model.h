@@ -145,6 +145,7 @@ public:
     ggml_type get_sd_wtype();
     std::string load_merges(); // xxxx_debug
     bool load_tensors(on_new_tensor_cb_t on_new_tensor_cb, ggml_backend_t backend);
+    // xxxx_9999
     bool load_tensors(std::map<std::string, struct ggml_tensor*>& tensors,
                       ggml_backend_t backend,
                       std::set<std::string> ignore_tensors = {});

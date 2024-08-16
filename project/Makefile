@@ -12,15 +12,17 @@ TARGET := sdxl_turbo
 SOURCE := main.cpp
 
 
-INCS := \
+INCS := -I../ggml/include/ggml/ -I../ggml/src/ \
 		$(shell pkg-config nimage --cflags) \
 # 		$(shell pkg-config ggml --cflags)
 
 LIBS := \
 	$(shell pkg-config nimage --libs) \
-	$(shell pkg-config ggml --libs) -lgomp \
+	-L ../build/ggml/src -lggml \
 	-L/usr/local/cuda/lib64 -lcuda -lcudart -lcublas \
 	-lm -lstdc++
+
+# 	$(shell pkg-config ggml --libs) -lgomp \
 
 
 CFLAGS := -O3 -fPIC 

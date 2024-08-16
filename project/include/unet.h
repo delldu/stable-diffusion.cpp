@@ -73,7 +73,7 @@ struct FeedForward {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
         snprintf(s, sizeof(s), "%s%s", prefix, "net.0.");
         net_0.setup_weight_names(s);
         snprintf(s, sizeof(s), "%s%s", prefix, "net.2.");
@@ -125,7 +125,7 @@ struct CrossAttention {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
         snprintf(s, sizeof(s), "%s%s", prefix, "to_q.");
         to_q.setup_weight_names(s);
         snprintf(s, sizeof(s), "%s%s", prefix, "to_k.");
@@ -227,7 +227,7 @@ struct BasicTransformerBlock {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "attn1.");
         attn1.setup_weight_names(s);
@@ -320,7 +320,7 @@ struct SpatialTransformer {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "norm.");
         norm.setup_weight_names(s);
@@ -702,7 +702,7 @@ struct UNetModel : GGMLNetwork {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[1024];
+        char s[GGML_MAX_NAME];
         snprintf(s, sizeof(s), "%s%s", prefix, "input_blocks.0.0.");
         input_blocks_0_0.setup_weight_names(s);
 
