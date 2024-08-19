@@ -97,21 +97,21 @@ struct ggml_tensor* ggml_nn_linear(
 struct Linear {
     int64_t in_features;
     int64_t out_features;
-    bool bias_flag = true;
+    bool has_bias = true;
 
     struct ggml_tensor *weight;
     struct ggml_tensor *bias = NULL;
 
     void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype=GGML_TYPE_F16) {
         weight = ggml_new_tensor_2d(ctx, wtype, in_features, out_features);
-        if (bias_flag) {
-            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_F16)?GGML_TYPE_F32:GGML_TYPE_Q8_0, out_features);
+        if (has_bias) {
+            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_F16)?GGML_TYPE_F32:GGML_TYPE_F16, out_features);
         }
     }
 
     void setup_weight_names(const char *prefix) {
         ggml_format_name(weight, "%s%s", prefix, "weight");
-        if (bias_flag) {
+        if (has_bias) {
             ggml_format_name(bias, "%s%s", prefix, "bias");        
         }
     }
@@ -128,21 +128,21 @@ struct Conv2d {
     std::pair<int, int> stride = {1, 1};
     std::pair<int, int> padding =  {0, 0};
     std::pair<int, int> dilation = {1, 1};
-    bool bias_flag = true;
+    bool has_bias = true;
 
     struct ggml_tensor *weight;
     struct ggml_tensor *bias = NULL;
 
     void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype=GGML_TYPE_F16) {
         weight = ggml_new_tensor_4d(ctx, wtype, kernel_size.second, kernel_size.first, in_channels, out_channels);
-        if (bias_flag) {
-            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_F16)?GGML_TYPE_F32:GGML_TYPE_Q8_0, out_channels);
+        if (has_bias) {
+            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_F16)?GGML_TYPE_F32:GGML_TYPE_F16, out_channels);
         }        
     }
 
     void setup_weight_names(const char *prefix) {
         ggml_format_name(weight, "%s%s", prefix, "weight");
-        if (bias_flag) {
+        if (has_bias) {
             ggml_format_name(bias, "%s%s", prefix, "bias");        
         }        
     }
@@ -158,10 +158,10 @@ struct GroupNorm32 {
     struct ggml_tensor *weight;
     struct ggml_tensor *bias;
 
-    void create_weight_tensors(struct ggml_context* ctx) {
+    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype=GGML_TYPE_F32) {
         // norm use GGML_TYPE_F32 !!!
-        weight = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, num_channels);
-        bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, num_channels);
+        weight = ggml_new_tensor_1d(ctx, wtype, num_channels);
+        bias = ggml_new_tensor_1d(ctx, wtype, num_channels);
     }
 
     void setup_weight_names(const char *prefix) {

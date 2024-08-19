@@ -417,22 +417,22 @@ struct MultiheadAttention {
     void create_weight_tensors(struct ggml_context* ctx) {
         q_proj.in_features = embed_dim;
         q_proj.out_features = embed_dim;
-        q_proj.bias_flag = bias;
+        q_proj.has_bias = bias;
         q_proj.create_weight_tensors(ctx);
 
         k_proj.in_features = embed_dim;
         k_proj.out_features = embed_dim;
-        k_proj.bias_flag = bias;
+        k_proj.has_bias = bias;
         k_proj.create_weight_tensors(ctx);
 
         v_proj.in_features = embed_dim;
         v_proj.out_features = embed_dim;
-        v_proj.bias_flag = bias;
+        v_proj.has_bias = bias;
         v_proj.create_weight_tensors(ctx);
 
         out_proj.in_features = embed_dim;
         out_proj.out_features = embed_dim;
-        out_proj.bias_flag = bias;
+        out_proj.has_bias = bias;
         out_proj.create_weight_tensors(ctx);
     }
 
