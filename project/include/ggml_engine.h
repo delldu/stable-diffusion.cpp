@@ -19,8 +19,13 @@ Header only file for ggml engine
 #include <ggml.h>
 #include <ggml-alloc.h>
 #include <ggml-backend.h>
-
 #include <nimage/image.h> // IMAGE, TENSOR ...
+
+#include <vector>
+#include <unordered_map>
+#include <algorithm>
+
+#include "meta_tensor.h"
 
 #ifdef GGML_CUDA
 #define GGML_USE_CUDA
@@ -45,8 +50,6 @@ Header only file for ggml engine
 #define MAX_INPUT_TENSORS 8
 #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
-#include <vector>
-#include <unordered_map>
 
 // GGML Engine
 struct GGMLEngine {
@@ -75,35 +78,13 @@ struct GGMLEngine {
     std::unordered_map<char *, TENSOR *> output_tensors = {};
 };
 
-struct TensorInfo {
-    char name[2 * GGML_MAX_NAME];
-    uint32_t n_dims;
-    uint64_t ne[GGML_MAX_DIMS];
-    enum ggml_type type;
-    uint64_t offset; // offset from start of `data`, must be a multiple of `ALIGNMENT`
-    size_t size; // ggml_nbytes()
-    size_t file_index = 0;
-
-    void dump_info() {
-        char buf[256];
-
-        int len = 0;
-        len += snprintf(buf + len, sizeof(buf) - len, "%s: %s, dims = %d [", name, ggml_type_name(type), n_dims);
-        for (int i = 0; i < n_dims; i++) {
-            len += snprintf(buf + len, sizeof(buf) - len, "%ld%s ", ne[i], (i < n_dims - 1)? ",":"]");
-        }
-        len += snprintf(buf + len, sizeof(buf) - len, ", offset = %ld, size = %ld, fileno: %ld", offset, size, file_index);
-
-        syslog_info("%s", buf);
-    }
-};
 
 struct GGMLModel {
     std::vector<char *> file_paths;
-    std::vector<TensorInfo *> tensor_infos;
+    std::vector<META_TENSOR *> meta_tensors;
 
     int preload(const char *model_name);
-    void remap(const char *key1, const char *key2);
+    void remap(const char *oldkey, const char *newkey);
     void dump();
     void clear();
 };
@@ -113,6 +94,7 @@ public:
     void dump();
     void set_device(int device) { m_ggml_engine.device = device; }
     bool load(const char* model_path, const char* prefix);
+    int load_weight(GGMLModel *model, const char *prefix);
 
     int start_engine();
     TENSOR* engine_forward(int argc, TENSOR* argv[]);
@@ -141,10 +123,9 @@ protected:
     void m_clear_output_tensors();
 };
 
-void *get_cast_data(struct ggml_tensor *x, bool from_backend, ggml_type dtype);
 int set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt, bool to_backend); // nt -- nimage tensor
 TENSOR* get_tensor_value(struct ggml_tensor* tensor, bool from_backend);
-void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
+void ggml_tensor_dump(struct ggml_tensor* tensor);
 
 #endif // _GGML_ENGINE_H
 
@@ -164,14 +145,11 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         for (struct ggml_tensor* t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t))
 
     static char* _find_model_path(const char* model_name);
-
-    static bool _data_type_valid(ggml_type dtype);
     static bool _same_data_shape(struct ggml_tensor* tensor, TENSOR* nt);
 
     static struct ggml_backend* _device_backend_init(int device, int* ok_device);
     static int _engine_backend_init(GGMLEngine* eng);
     static bool _backend_is_cpu(struct ggml_backend* backend);
-    static bool _load_weight_from_gguf(GGMLEngine* eng);
 
     // --------------------------------------------------------------------------------------
     static bool _backend_is_cpu(struct ggml_backend* backend)
@@ -196,7 +174,6 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         ggml_time_init(); // Nothing for linux but something on windows
         check_point(m_network_init() == RET_OK);
         check_point(_engine_backend_init(eng) == RET_OK);
-        _load_weight_from_gguf(eng);
 
         syslog_info("Start Engine OK.");
 
@@ -290,9 +267,9 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         check_point(eng->weight_context != NULL);
 
-        syslog_debug("Network initialising spends %ld ms", ggml_time_ms() - start_time);
+        syslog_info("Network initialising spends %ld ms", ggml_time_ms() - start_time);
 
-        return true;
+        return RET_OK;
     }
 
     static int _engine_backend_init(GGMLEngine* eng)
@@ -336,9 +313,9 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         syslog_info("Network tensors:");
         if (m_ggml_engine.inputs_context != NULL)
-        for_each_context_tensor(m_ggml_engine.inputs_context) { dump_ggml_tensor("  ", t); }
+        for_each_context_tensor(m_ggml_engine.inputs_context) { ggml_tensor_dump(t); }
         if (m_ggml_engine.weight_context != NULL)
-        for_each_context_tensor(m_ggml_engine.weight_context) { dump_ggml_tensor("  ", t); }
+        for_each_context_tensor(m_ggml_engine.weight_context) { ggml_tensor_dump(t); }
     }
 
     bool GGMLNetwork::load(const char* model_name, const char* prefix)
@@ -357,99 +334,111 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         return false;
     }
 
-    static bool _load_weight_from_gguf(GGMLEngine* eng)
+
+    int GGMLNetwork::load_weight(GGMLModel *model, const char *prefix)
     {
+        GGMLEngine* eng = &m_ggml_engine;
         check_point(eng != NULL);
-        if (strlen(eng->model_name) < 1) // Skip if no-existed model ...
-            return false;
+
+        size_t prefix_len = strlen(prefix);
+        bool cpu_backend = _backend_is_cpu(eng->backend);
 
         int64_t start_time = ggml_time_ms();
 
-        char* model_filename = NULL;
-        struct gguf_context* ctx_gguf = NULL;
-        // struct {
-        //     struct ggml_context* context;
-        // } weight;
-        struct ggml_context* weight_context = NULL;
+        size_t size;
+        char temp_name[GGML_MAX_NAME];
+        std::vector<char> read_buffer;
+        std::vector<char> temp_buffer;
+        std::vector<char> cast_buffer;
+        std::unordered_map<std::string, META_TENSOR *> temp_meta_maps;
+        META_TENSOR *meta, temp_meta;
 
-        // Loading weight
-        {
-            syslog_info("Loading weight from '%s' with prefix '%s' ...", eng->model_name, eng->weight_prefix);
-
-            model_filename = _find_model_path(eng->model_name);
-            check_point(model_filename != NULL);
-
-            struct gguf_init_params params = {
-                /*.no_alloc   =*/false,
-                /*.ctx        =*/&weight_context,
-            };
-
-            ctx_gguf = gguf_init_from_file(model_filename, params);
-            if (!ctx_gguf) {
-                syslog_error("Loading gguf file '%s'", model_filename);
-                free(model_filename);
+        for (auto& meta : model->meta_tensors) {
+            if (prefix_len > 0 && memcmp(meta->name, prefix, prefix_len) != 0) {
+                syslog_debug("Skip '%s' for mismatch '%s' ...", meta->name, prefix);
+                continue;
             }
-
-            check_point(ctx_gguf != NULL);
-            check_point(weight_context != NULL);
+            temp_meta_maps[meta->name] = meta;
+        }
+        if (temp_meta_maps.empty()) {
+            return RET_OK;
         }
 
-        // Network loading weight ...
-        {
-            size_t prefix_len = strlen(eng->weight_prefix);
-            struct ggml_tensor* d = NULL;
-            bool cpu_backend = _backend_is_cpu(eng->backend);
+        for (size_t file_index = 0; file_index < model->file_paths.size(); file_index++) {
+            // open file
+            FILE * file = ggml_fopen(model->file_paths[file_index], "rb");
+            if (! file) { // skip ?
+                syslog_error("Open file '%s'", model->file_paths[file_index]);
+                continue;
+            }
 
-            for_each_context_tensor(weight_context)
-            {
-                if (memcmp(t->name, eng->weight_prefix, prefix_len) != 0) {
-                    syslog_debug("Skip '%s' for mismatch '%s' ...", t->name, eng->weight_prefix);
+            for_each_context_tensor(m_ggml_engine.weight_context) {
+                snprintf(temp_name, sizeof(temp_name), "%s%s", prefix, t->name);
+
+                auto it = temp_meta_maps.find(temp_name);
+                meta = (it == temp_meta_maps.end())? NULL : (META_TENSOR *)it->second;
+                if (meta == NULL || meta->file_index != file_index) {
+                    syslog_error("'%s' NOT found in model weight.", temp_name);
                     continue;
                 }
 
-                // Real name should be t->name + prefix_len !!!
-                d = ggml_get_tensor(eng->weight_context, t->name + prefix_len);
-                if (d == NULL) {
-                    syslog_debug("Skip '%s' for not defined in network ...", t->name + prefix_len);
-                    continue;
-                }
-                if (!ggml_are_same_shape(d, t)) {
+                // match shape 
+                if (meta->ne[0] != t->ne[0] || meta->ne[1] != t->ne[1] || meta->ne[2] != t->ne[2] || meta->ne[3] != t->ne[3]) {
                     syslog_error("%s shape mismatch: got [%ld, %ld, %ld, %ld], expected [%ld, %ld, %ld, %ld]",
-                        d->name, t->ne[0], t->ne[1], t->ne[2], t->ne[3], d->ne[0],
-                        d->ne[1], d->ne[2], d->ne[3]);
+                        meta->name, meta->ne[0], meta->ne[1], meta->ne[2], meta->ne[3], t->ne[0], t->ne[1], t->ne[2], t->ne[3]);
                     continue;
                 }
 
-                // Loading tensors ...
-                if (d->type == t->type) { // fast set
+                // read ok ?
+                size = meta_tensor_nbytes(meta);
+                read_buffer.reserve(size);
+                fseek(file, meta->offset, SEEK_SET);
+                const size_t n = fread(read_buffer.data(), 1, size, file);
+                if (n != size) {
+                    syslog_error("Read '%s' data from '%s' ...", meta->name, model->file_paths[file_index]);
+                    continue;
+                }
+
+                if (t->type == meta->type) { // fast set
                     if (cpu_backend) {
-                        memcpy(d->data, t->data, ggml_nbytes(d));
+                        memcpy(t->data, read_buffer.data(), ggml_nbytes(t));
                     } else {
-                        ggml_backend_tensor_set(d, t->data, 0, ggml_nbytes(d));
+                        ggml_backend_tensor_set(t, read_buffer.data(), 0, ggml_nbytes(t));
                     }
                 } else { // slow set
-                    void *temp_data = get_cast_data(t, false /*from_backend */, d->type);
-                    check_point(temp_data != NULL);                    
+                    meta->data = read_buffer.data();
+
+                    // Clone temp meta for cast
+                    memcpy(&temp_meta, meta, sizeof(META_TENSOR));
+                    temp_meta.type = t->type;
+                    temp_buffer.reserve(ggml_nbytes(t)); // need add more ?
+                    temp_meta.data = temp_buffer.data();
+
+                    // CheckPoint                    
+                    // meta_tensor_dump(meta);
+                    // // meta_tensor_dump(&temp_meta);
+                    // ggml_tensor_dump(t);
+                    // printf("----------------------------------------------------\n");
+                    check_point(meta_tensor_cast(meta, &temp_meta, cast_buffer) == RET_OK);
 
                     if (cpu_backend) {
-                        memcpy(d->data, temp_data, ggml_nbytes(d));
+                        memcpy(t->data, temp_meta.data, ggml_nbytes(t));
                     } else {
-                        ggml_backend_tensor_set(d, temp_data, 0, ggml_nbytes(d));
+                        ggml_backend_tensor_set(t, temp_meta.data, 0, ggml_nbytes(t));
                     }
-                    free(temp_data);
                 }
-                syslog_debug("Loading %s ... OK", d->name);
+                syslog_debug("Loading %s ... OK", t->name);
             }
-        }
 
-        // Clean up
-        {
-            gguf_free(ctx_gguf);
-            ggml_free(weight_context);
-            free(model_filename);
+            // close file
+            fclose(file);
         }
+        temp_meta_maps.clear();
+        read_buffer.clear();
+        temp_buffer.clear();
+        cast_buffer.clear();
 
-        syslog_debug("Loading weight spends %ld ms", ggml_time_ms() - start_time);
+        syslog_info("Loading weight spends %ld ms", ggml_time_ms() - start_time);
         return true;
     }
 
@@ -493,7 +482,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         // Delete temp context
         ggml_free(ctx);
-        syslog_debug("Building graph spends %ld ms", ggml_time_ms() - start_time);
+        syslog_info("Building graph spends %ld ms", ggml_time_ms() - start_time);
 
         return gf;
     }
@@ -626,7 +615,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
                     m_ggml_engine.inputs_context, m_ggml_engine.backend);
                 CHECK_POINT(m_ggml_engine.inputs_backend_buffer != NULL);
 
-                syslog_debug("Set input spends %ld ms", ggml_time_ms() - start_time);
+                syslog_info("Set input spends %ld ms", ggml_time_ms() - start_time);
             }
 
             bool cpu_backend = _backend_is_cpu(m_ggml_engine.backend);
@@ -707,7 +696,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
     }
 
 
-    void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor)
+    void ggml_tensor_dump(struct ggml_tensor* tensor)
     {
         char output_buffer[1024];
 
@@ -715,21 +704,16 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         size_t len = 0;
         if (tensor->name) {
-            len += snprintf(output_buffer + len, sizeof(output_buffer) - len, "%s%s: %s, [%ld, %ld, %ld, %ld]", prefix,
-                tensor->name, ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1], tensor->ne[2], tensor->ne[3]);
+            len += snprintf(output_buffer + len, sizeof(output_buffer) - len, "%6s [%6ld,%6ld,%6ld,%6ld], %s", 
+                ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1], tensor->ne[2], tensor->ne[3], tensor->name);
         } else {
-            len += snprintf(output_buffer + len, sizeof(output_buffer) - len, "%s%s: %s, [%ld, %ld, %ld, %ld]", prefix,
-                "none", ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1], tensor->ne[2], tensor->ne[3]);
+            len += snprintf(output_buffer + len, sizeof(output_buffer) - len, "%6s [%6ld,%6ld,%6ld,%6ld], %s", 
+                ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1], tensor->ne[2], tensor->ne[3], "none");
         }
 
-        syslog_info("%s", output_buffer);
+        printf("%s\n", output_buffer);
     }
 
-    static bool _data_type_valid(ggml_type dtype)
-    {
-        return (dtype == GGML_TYPE_I8 || dtype == GGML_TYPE_I16 || dtype == GGML_TYPE_I32 || dtype == GGML_TYPE_F16
-            || dtype == GGML_TYPE_F32);
-    }
 
     static bool _same_data_shape(struct ggml_tensor* tensor, TENSOR* nt)
     {
@@ -749,21 +733,40 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
     TENSOR* get_tensor_value(struct ggml_tensor* tensor, bool from_backend = false)
     {
         CHECK_POINT(tensor);
-        CHECK_POINT(_data_type_valid(tensor->type));
+        void *backend_data = NULL;
 
-        float *source_data = (float *)get_cast_data(tensor, from_backend, GGML_TYPE_F32);
-        CHECK_POINT(source_data);
+        if (from_backend) {
+            size_t n = (size_t)ggml_nbytes(tensor);
+            backend_data = (void *)malloc(n);
+            CHECK_POINT(backend_data != NULL);
+            ggml_backend_tensor_get(tensor, backend_data, 0, n);
+        }
 
         // B, C, H, W
         TENSOR* nt = tensor_create((int)tensor->ne[3], (int)tensor->ne[2], (int)tensor->ne[1], (int)tensor->ne[0]);
-        if (nt == NULL) {
-            free(source_data);
-        }
         CHECK_TENSOR(nt);
         size_t n = nt->batch * nt->chan * nt->height * nt->width;
-        memcpy(nt->data, source_data, n * sizeof(float)); // Save source data to nt->data
 
-        free(source_data);
+        if (tensor->type == GGML_TYPE_F32) {
+            memcpy(nt->data, from_backend? backend_data : tensor->data, n * sizeof(float));
+            if (from_backend)
+                free(backend_data);
+            return nt;
+        }
+
+        if (tensor->type == GGML_TYPE_F16) {
+            ggml_fp16_to_fp32_row((ggml_fp16_t*)(from_backend?backend_data : tensor->data), (float*)nt->data, n);
+            if (from_backend)
+                free(backend_data);
+            return nt;
+        }
+
+        // Dequantize src data to dst
+        auto qtype = ggml_internal_get_type_traits(tensor->type);
+        CHECK_POINT(qtype.to_float != NULL);
+        qtype.to_float(from_backend?backend_data : tensor->data, (float *)nt->data, n);
+        if (from_backend)
+            free(backend_data);
 
         return nt;
     }
@@ -775,7 +778,6 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         // B, C, H, W
         check_point(_same_data_shape(tensor, nt));
-        check_point(_data_type_valid(tensor->type));
         size_t nb = ggml_nbytes(tensor);
 
         // 1) NOT convert data format ...
@@ -791,7 +793,10 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         // 2) Convert nt->data to tensor->data
         void *dst_data = (void *)malloc(nb);
         check_point(dst_data != NULL);
-        {
+        if (tensor->type == GGML_TYPE_F16) {
+            size_t n = tensor->ne[0] * tensor->ne[1] * tensor->ne[2] * tensor->ne[3];
+            ggml_fp32_to_fp16_row((float*)nt->data, (ggml_fp16_t*)dst_data, n);
+        } else {
             size_t nrows = (size_t)ggml_nrows(tensor);
             size_t n_per_row = ggml_nelements(tensor)/nrows; // tensor->ne[0]
             std::vector<float> matrix(n_per_row, 1.0f);  // dummy importance matrix
@@ -807,70 +812,16 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         return RET_OK;
     }
 
-    void *get_cast_data(struct ggml_tensor *x, bool from_backend, ggml_type dtype)
-    {
-        // Cast type of x to dtype
-        void *backend_data = NULL;
-
-        if (from_backend) {
-            size_t bn = (size_t)ggml_nbytes(x);
-
-            backend_data = (void *)malloc(bn);
-            CHECK_POINT(backend_data != NULL);
-            ggml_backend_tensor_get(x, backend_data, 0, bn);
-        }
-
-        size_t n = ggml_nelements(x);
-        float *float_data = (float *)calloc(n, sizeof(float));
-        CHECK_POINT(float_data != NULL);
-
-        // 1) Dequantize data to float_data
-        if (x->type == GGML_TYPE_F32) {
-            if(from_backend) {
-                memcpy((void *)float_data, (void *)backend_data, n * sizeof(float));
-                free(backend_data);
-            } else {
-                memcpy(float_data, x->data, n * sizeof(float));
-            }
-            return float_data;
-        }
-        {
-            auto qtype = ggml_internal_get_type_traits(x->type);
-            CHECK_POINT(qtype.to_float != NULL);
-            if (from_backend) {
-                qtype.to_float(backend_data, (float *)float_data, n);
-                free(backend_data); // backend_data is useless
-            } else {
-                qtype.to_float(x->data, (float *)float_data, n);
-            }
-        }
-
-        // 2) Quantize float_data to dst_data
-        if (dtype == GGML_TYPE_F32)
-            return float_data;
-
-        void *dst_data = (void *)calloc(n, ggml_type_size(dtype));
-        if (dst_data == NULL) {
-            free(float_data);
-        }
-        CHECK_POINT(dst_data != NULL);
-        {
-            size_t nrows = (size_t)ggml_nrows(x);
-            size_t n_per_row = n/nrows; // x->ne[0]
-
-            std::vector<float> matrix(n_per_row, 1.0f);  // dummy importance matrix
-            ggml_quantize_chunk(dtype, (float *)float_data, dst_data, 0 /*start*/, nrows, n_per_row, matrix.data());
-        }
-
-        free(float_data);
-
-        return dst_data; // need free dst_data
-    }
-
     int GGMLModel::preload(const char *model_name)
     {
         char *file_name = _find_model_path(model_name);
         check_point(file_name != NULL);
+
+        syslog_info("Preloading weight from '%s' ...", file_name);
+        if (std::find(file_paths.begin(), file_paths.end(), file_name) != file_paths.end()) // file_name has been preloaded
+            return RET_OK;
+
+        int64_t start_time = ggml_time_ms();
 
         file_paths.push_back(file_name);
         size_t file_index = file_paths.size() - 1;
@@ -888,44 +839,55 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         for (int i = 0; i < n_tensors; i++) {
             char *name = gguf_get_tensor_name(ctx_gguf_, i);
             struct ggml_tensor* dummy = ggml_get_tensor(ctx_meta_, name);
+            // name === dummy->name !!! strange ...            
+            // if (strlen(name) >= GGML_MAX_NAME) {
+            //     syslog_info("name = '%s' too long (%ld)", name, strlen(name)); // name === dummy->name !!! strange ...;
+            // }
 
-            TensorInfo *info = (TensorInfo *)calloc(1, sizeof(TensorInfo));
-            check_point(info != NULL);
+            META_TENSOR *meta = meta_tensor_new(gguf_get_tensor_type(ctx_gguf_, i), ggml_n_dims(dummy), dummy->ne);
+            check_point(meta != NULL);
 
-            snprintf(info->name, sizeof(info->name), "%s", name);
-            info->type = gguf_get_tensor_type(ctx_gguf_, i); // dummy->type;
-            info->offset = data_offset + gguf_get_tensor_offset(ctx_gguf_, i);
-            info->file_index = file_index;
+            snprintf(meta->name, sizeof(meta->name), "%s", name);
+            // meta->type = gguf_get_tensor_type(ctx_gguf_, i); // dummy->type;
+            // meta->n_dims = ggml_n_dims(dummy);
+            // for (int j = 0; j < meta->n_dims; j++)
+            //     meta->ne[j] = dummy->ne[meta->n_dims - j - 1]; // Reverse 
 
-            info->n_dims = ggml_n_dims(dummy);
-            for (int j = 0; j < info->n_dims; j++)
-                info->ne[j] = dummy->ne[info->n_dims - j - 1]; // Reverse 
-            info->size = ggml_nbytes(dummy);
+            meta->offset = data_offset + gguf_get_tensor_offset(ctx_gguf_, i);
+            meta->file_index = file_index;
 
-            tensor_infos.push_back(info); // Save to tensor_infos
+            // if (ggml_nbytes(dummy) != meta_tensor_nbytes(meta)) {
+            //     meta_tensor_dump(meta);
+            //     CheckPoint("====> name = %s, ggml_nbytes(dummy) = %ld, meta_tensor_nbytes(meta) = %ld ", name, ggml_nbytes(dummy), meta_tensor_nbytes(meta));
+            // }
+            // check_point(ggml_nbytes(dummy) == meta_tensor_nbytes(meta));
+
+            meta_tensors.push_back(meta); // Save to meta_tensors
         }
 
         gguf_free(ctx_gguf_);
         ggml_free(ctx_meta_);
 
+        syslog_info("Preloading weight spends %ld ms", ggml_time_ms() - start_time);
+
         return RET_OK;
     }
 
-   void GGMLModel::remap(const char *key1, const char *key2)
+   void GGMLModel::remap(const char *oldkey, const char *newkey)
     {
-        TensorInfo *t;
+        META_TENSOR *t;
         char *find, buf[2 * GGML_MAX_NAME];
-        int klen = strlen(key1);
+        int klen = strlen(oldkey);
 
         if (klen == 0) // nothing to do ...
             return;
 
-        for (size_t i = 0; i < tensor_infos.size(); i++) {
-            t = tensor_infos[i];
-            find = strstr(t->name, key1);
+        for (size_t i = 0; i < meta_tensors.size(); i++) {
+            t = meta_tensors[i];
+            find = strstr(t->name, oldkey);
             if (find != NULL) {
                 *find = '\0';
-                snprintf(buf, sizeof(buf), "%s%s%s", t->name, key2, find + klen);
+                snprintf(buf, sizeof(buf), "%s%s%s", t->name, newkey, find + klen);
                 snprintf(t->name, sizeof(t->name), "%s", buf);
             }
         }
@@ -933,31 +895,34 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
     void GGMLModel::dump()
     {
-        syslog_info("Model Files:");
+        printf("Model Files:\n");
         for (size_t i = 0; i < file_paths.size(); i++) {
-            syslog_info("%ld: %s", i, file_paths[i]);
+            printf("  %ld: %s\n", i, file_paths[i]);
         }
 
-        syslog_info("Model Tensors:");
-        for (size_t i = 0; i < tensor_infos.size(); i++) {
-            tensor_infos[i]->dump_info();
+        printf("Model Tensors: %ld\n", meta_tensors.size());
+        for (auto& meta : meta_tensors) {
+            meta_tensor_dump(meta);
         }
     }
 
     void GGMLModel::clear()
     {
-        for (auto it = file_paths.begin(); it != file_paths.end(); ++it) {
-            free(*it);
+        for (auto& file : file_paths) {
+            free(file);
         }
         file_paths.clear();
 
-        for (auto it = tensor_infos.begin(); it != tensor_infos.end(); ++it) {
-            free(*it);
+        for (auto& meta : meta_tensors) {
+            free(meta);
         }
-        tensor_infos.clear();
+        meta_tensors.clear();
     }
 
 
-
 #endif // GGML_ENGINE_IMPLEMENTATION
+
+#define META_TENSOR_IMPLEMENTATION
+#include "meta_tensor.h"
+#undef META_TENSOR_IMPLEMENTATION
 

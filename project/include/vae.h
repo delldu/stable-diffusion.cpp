@@ -5,6 +5,7 @@
 #include "ggml_engine.h"
 #include "ggml_nn.h"
 
+
 /*======= AutoEncoderKL =======*/
 
 struct DownSample {
@@ -341,7 +342,7 @@ struct Encoder {
                 down_block[i][j].setup_weight_names(s);
             }
             if (i != len_mults - 1) {
-                snprintf(s, sizeof(s), "%sdown.%d.downsample", prefix, i);
+                snprintf(s, sizeof(s), "%sdown.%d.downsample.", prefix, i);
                 down_sample[i].setup_weight_names(s);
             }
         }
@@ -572,6 +573,11 @@ struct AutoEncoderKL : GGMLNetwork {
     }
 
     void create_weight_tensors(struct ggml_context* ctx) {
+        // blocks["quant_conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(embed_dim * factor,
+        //                                                              dd_config.z_channels * factor,
+        //                                                              {1, 1}));
+
+        
         quant_conv_w = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, 1, 1, 2 * dd_config.z_channels, 2 * embed_dim);
         quant_conv_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 2 * embed_dim);
         encoder.create_weight_tensors(ctx);

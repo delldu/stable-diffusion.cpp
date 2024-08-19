@@ -494,11 +494,11 @@ struct CLIPMLP {
     void create_weight_tensors(struct ggml_context* ctx) {
         fc1.in_features = d_model;
         fc1.out_features = intermediate_size;
-        fc1.create_weight_tensors(ctx);
+        fc1.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         fc2.in_features = intermediate_size;
         fc2.out_features = d_model;
-        fc2.create_weight_tensors(ctx);
+        fc2.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
     }
 
     void setup_weight_names(const char *prefix) {
@@ -621,7 +621,7 @@ struct CLIPEncoder {
 };
 
 struct CLIPEmbeddings {
-    int64_t embed_dim; // 1024, 1280 ...
+    int64_t embed_dim; // 768, 1024, 1280 ...
     int64_t vocab_size = 49408;
     int64_t num_positions = 77;
 
@@ -630,8 +630,8 @@ struct CLIPEmbeddings {
 
 
     void create_weight_tensors(struct ggml_context* ctx) {
-        token_embedding_weight = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, embed_dim, vocab_size);
-        position_embedding_weight = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, embed_dim, num_positions);
+        token_embedding_weight = ggml_new_tensor_2d(ctx, GGML_TYPE_Q8_0, embed_dim, vocab_size); // [768, 49408, 1, 1]
+        position_embedding_weight = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, embed_dim, num_positions); // [768, 77, 1, 1]
     }
 
     void setup_weight_names(const char *prefix) {

@@ -11,10 +11,14 @@
 
 #include <ggml.h>
 
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+
 // struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tensor* x)
 // {
 //     return ggml_dup_inplace(ctx, x);
 // }
+
+
 
 struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w,
     struct ggml_tensor* b, int s0 = 1, int s1 = 1, int p0 = 0, int p1 = 0, int d0 = 1, int d1 = 1)
@@ -44,9 +48,9 @@ struct LayerNorm {
     struct ggml_tensor *w;
     struct ggml_tensor *b;
 
-    void create_weight_tensors(struct ggml_context* ctx) {
-        w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, normalized_shape);
-        b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, normalized_shape);
+    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype=GGML_TYPE_F32) {
+        w = ggml_new_tensor_1d(ctx, wtype, normalized_shape);
+        b = ggml_new_tensor_1d(ctx, wtype, normalized_shape);
     }
 
     void setup_weight_names(const char *prefix) {
@@ -98,10 +102,10 @@ struct Linear {
     struct ggml_tensor *weight;
     struct ggml_tensor *bias = NULL;
 
-    void create_weight_tensors(struct ggml_context* ctx) {
-        weight = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, in_features, out_features);
+    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype=GGML_TYPE_F16) {
+        weight = ggml_new_tensor_2d(ctx, wtype, in_features, out_features);
         if (bias_flag) {
-            bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_features);
+            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_F16)?GGML_TYPE_F32:GGML_TYPE_Q8_0, out_features);
         }
     }
 
@@ -129,10 +133,10 @@ struct Conv2d {
     struct ggml_tensor *weight;
     struct ggml_tensor *bias = NULL;
 
-    void create_weight_tensors(struct ggml_context* ctx) {
-        weight = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, kernel_size.second, kernel_size.first, in_channels, out_channels);
+    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype=GGML_TYPE_F16) {
+        weight = ggml_new_tensor_4d(ctx, wtype, kernel_size.second, kernel_size.first, in_channels, out_channels);
         if (bias_flag) {
-            bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
+            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_F16)?GGML_TYPE_F32:GGML_TYPE_Q8_0, out_channels);
         }        
     }
 

@@ -7,6 +7,7 @@
 
 #include <utility>     // std::pair, std::make_pair
 
+
 /*==================================================== UnetModel =====================================================*/
 
 struct GEGLU {
@@ -19,14 +20,14 @@ struct GEGLU {
     struct ggml_tensor* b;
 
 
-    void create_weight_tensors(struct ggml_context* ctx) {
-        w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, dim_in, dim_out * 2);
-        b   = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, dim_out * 2);
+    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype=GGML_TYPE_F16) {
+        w = ggml_new_tensor_2d(ctx, wtype, dim_in, dim_out * 2);
+        b = ggml_new_tensor_1d(ctx, wtype, dim_out * 2);
     }
 
     void setup_weight_names(const char *prefix) {
-        ggml_format_name(w, "%s%s", prefix, "weight");
-        ggml_format_name(b, "%s%s", prefix, "bias");        
+        ggml_format_name(w, "%s%s", prefix, "proj.weight");
+        ggml_format_name(b, "%s%s", prefix, "proj.bias");        
     }
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
@@ -65,11 +66,11 @@ struct FeedForward {
 
         net_0.dim_in = dim;
         net_0.dim_out = inner_dim;
-        net_0.create_weight_tensors(ctx);
+        net_0.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         net_2.in_features = inner_dim;
         net_2.out_features = dim_out;
-        net_2.create_weight_tensors(ctx);
+        net_2.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
     }
 
     void setup_weight_names(const char *prefix) {
@@ -106,22 +107,22 @@ struct CrossAttention {
         to_q.in_features = query_dim;
         to_q.out_features = inner_dim;
         to_q.bias_flag = false;
-        to_q.create_weight_tensors(ctx);
+        to_q.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         to_k.in_features = context_dim;
         to_k.out_features = inner_dim;
         to_k.bias_flag = false;
-        to_k.create_weight_tensors(ctx);
+        to_k.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         to_v.in_features = context_dim;
         to_v.out_features = inner_dim;
         to_v.bias_flag = false;
-        to_v.create_weight_tensors(ctx);
+        to_v.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         to_out_0.in_features = inner_dim;
         to_out_0.out_features = query_dim;
         to_out_0.bias_flag = false;
-        to_out_0.create_weight_tensors(ctx);
+        to_out_0.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
     }
 
     void setup_weight_names(const char *prefix) {
@@ -208,21 +209,21 @@ struct BasicTransformerBlock {
         attn2.create_weight_tensors(ctx);
 
         norm1.normalized_shape = dim;
-        norm1.create_weight_tensors(ctx);
+        norm1.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         norm2.normalized_shape = dim;
-        norm2.create_weight_tensors(ctx);
+        norm2.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         norm3.normalized_shape = dim;
-        norm3.create_weight_tensors(ctx);
+        norm3.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         // if (ff_in_flag) {
         //     norm_in.normalized_shape = dim;
-        //     norm_in.create_weight_tensors(ctx);
+        //     norm_in.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
 
         //     ff_in.dim = dim;
         //     ff_in.dim_out = dim;
-        //     ff_in.create_weight_tensors(ctx);
+        //     ff_in.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
         // }
     }
 
@@ -291,7 +292,7 @@ struct SpatialTransformer {
 
     GroupNorm32 norm;
     Conv2d proj_in;
-    BasicTransformerBlock transformer_blocks[10];
+    BasicTransformerBlock transformer[10];
     Conv2d proj_out;
 
     void create_weight_tensors(struct ggml_context* ctx) {
@@ -306,11 +307,11 @@ struct SpatialTransformer {
         proj_in.create_weight_tensors(ctx);
 
         for (int i = 0; i < depth; i++) {
-            transformer_blocks[i].dim = inner_dim;
-            transformer_blocks[i].n_head = n_head;
-            transformer_blocks[i].d_head = d_head;
-            transformer_blocks[i].context_dim = context_dim;
-            transformer_blocks[i].create_weight_tensors(ctx);
+            transformer[i].dim = inner_dim;
+            transformer[i].n_head = n_head;
+            transformer[i].d_head = d_head;
+            transformer[i].context_dim = context_dim;
+            transformer[i].create_weight_tensors(ctx);
         }
 
         proj_out.in_channels = inner_dim;
@@ -328,8 +329,8 @@ struct SpatialTransformer {
         proj_in.setup_weight_names(s);
 
         for (int i = 0; i < depth; i++) {
-            snprintf(s, sizeof(s), "%s%s%d.", prefix, "transformer_blocks.", i);
-            transformer_blocks[i].setup_weight_names(s);
+            snprintf(s, sizeof(s), "%s%s%d.", prefix, "transformer.", i);
+            transformer[i].setup_weight_names(s);
         }
 
         snprintf(s, sizeof(s), "%s%s", prefix, "proj_out.");
@@ -357,8 +358,8 @@ struct SpatialTransformer {
         x = ggml_reshape_3d(ctx, x, inner_dim, w * h, n);      // [N, h * w, inner_dim]
 
         for (int i = 0; i < depth; i++) {
-            // std::string name       = "transformer_blocks." + std::to_string(i);
-            auto transformer_block = transformer_blocks[i]; // std::dynamic_pointer_cast<BasicTransformerBlock>(blocks[name]);
+            // std::string name       = "transformer." + std::to_string(i);
+            auto transformer_block = transformer[i]; // std::dynamic_pointer_cast<BasicTransformerBlock>(blocks[name]);
             x = transformer_block.forward(ctx, x, context);
         }
 
@@ -544,7 +545,8 @@ struct UNetModel : GGMLNetwork {
         middle_block_0.create_weight_tensors(ctx);
 
         // SpatialTransformer
-        middle_block_1.in_channels = 2 * model_channels;
+        // ch = 1280, time_embed_dim = 1280, n_head = 20, d_head = 64, depth = 10, context_dim=2048
+        middle_block_1.in_channels = 4 * model_channels;
         middle_block_1.n_head = 20;
         middle_block_1.d_head = num_head_channels; // 64
         middle_block_1.depth = 10;
@@ -734,11 +736,11 @@ struct UNetModel : GGMLNetwork {
         input_blocks_6_0.setup_weight_names(s);
 
         // middle block
-        snprintf(s, sizeof(s), "%s%s", prefix, "middle_block_0.");
+        snprintf(s, sizeof(s), "%s%s", prefix, "middle_block.0.");
         middle_block_0.setup_weight_names(s);
-        snprintf(s, sizeof(s), "%s%s", prefix, "middle_block_1.");
+        snprintf(s, sizeof(s), "%s%s", prefix, "middle_block.1.");
         middle_block_1.setup_weight_names(s);
-        snprintf(s, sizeof(s), "%s%s", prefix, "middle_block_2.");
+        snprintf(s, sizeof(s), "%s%s", prefix, "middle_block.2.");
         middle_block_2.setup_weight_names(s);
 
 
@@ -751,7 +753,7 @@ struct UNetModel : GGMLNetwork {
         output_blocks_2_0.setup_weight_names(s);
         snprintf(s, sizeof(s), "%s%s", prefix, "output_blocks.3.0.");
         output_blocks_3_0.setup_weight_names(s);
-        snprintf(s, sizeof(s), "%s%s", prefix, "output_blocks.3.0.");
+        snprintf(s, sizeof(s), "%s%s", prefix, "output_blocks.4.0.");
         output_blocks_4_0.setup_weight_names(s);
         snprintf(s, sizeof(s), "%s%s", prefix, "output_blocks.5.0.");
         output_blocks_5_0.setup_weight_names(s);

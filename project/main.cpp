@@ -5,8 +5,8 @@
 
 #include "tensor.h"
 // #include "include/vae.h"
-// #include "include/unet.h"
-#include "include/clip.h"
+#include "include/unet.h"
+// #include "include/clip.h"
 
 struct ModelParams {
     int device = 1; // 0 -- cpu, 1 -- cuda 0
@@ -96,34 +96,41 @@ int text2image(ModelParams params)
     print_params(params);
 
 
-    GGMLModel weight;
-    weight.preload(params.model_path);
-    weight.remap("first_stage_model.", "vae.");
-    weight.remap("model.diffusion_model.", "unet.");
-    weight.remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
-    weight.remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
+    GGMLModel model;
+    model.preload(params.model_path);
+    model.remap("first_stage_model.", "vae.");
+    model.remap("model.diffusion_model.", "unet.");
+    model.remap(".transformer_blocks.", ".transformer.");
+    model.remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
+    model.remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
 
-    CheckPoint("OK");
-    
-    weight.dump();
+    model.dump();
 
-    weight.clear();    
 
-    // // AutoEncoderKL net;
-    // // UNetModel net;
+    // AutoEncoderKL net;
+    UNetModel net;
     // TextEncoder net;
 
-    // net.set_device(params.device);
-    // // net.load(params.model_path, "first_stage_model.");
-    // // net.load(params.model_path, "model.diffusion_model.");
-    // net.load(params.model_path, "cond_stage_model.");
+    // // net.set_device(params.device);
+    // // // net.load(params.model_path, "first_stage_model.");
+    // // // net.load(params.model_path, "model.diffusion_model.");
+    // // net.load(params.model_path, "cond_stage_model.");
 
-    // net.start_engine();
-    // net.dump();
+    net.set_device(1);
+    net.start_engine();
+    net.dump();
 
-    // // 
-    // net.stop_engine();
+    net.load_weight(&model, "unet.");
+    // net.load_weight(&model, "vae.");
+    // net.load_weight(&model, "clip.");
 
+    net.stop_engine();
+
+
+    // model.clear();
+
+
+    CheckPoint("OK !");
 
     return 0;
 }
@@ -228,6 +235,7 @@ int main(int argc, char** argv)
         }
     }
 
+
     if (sdxl_turbo_params.verbose) {
         print_params(sdxl_turbo_params);
     }
@@ -239,6 +247,7 @@ int main(int argc, char** argv)
     if (strlen(sdxl_turbo_params.positive) > 0) {
         return text2image(sdxl_turbo_params);
     }
+    closelog();    
 
     // Without input image and positive prompt
     help(argv[0]);
