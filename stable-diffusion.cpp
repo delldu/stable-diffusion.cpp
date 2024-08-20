@@ -168,13 +168,13 @@ public:
             cond_stage_model->tokenizer.load_from_merges(merges_utf8_str);
         }
 
-        struct ggml_init_params params;
-        params.mem_size   = static_cast<size_t>(10 * 1024) * 1024;  // 10M
-        params.mem_buffer = NULL;
-        params.no_alloc   = false;
-        // LOG_DEBUG("mem_size %u ", params.mem_size);
-        struct ggml_context* ctx = ggml_init(params);  // for  alphas_cumprod and is_using_v_parameterization check
-        GGML_ASSERT(ctx != NULL);
+        // struct ggml_init_params params;
+        // params.mem_size   = static_cast<size_t>(10 * 1024) * 1024;  // 10M
+        // params.mem_buffer = NULL;
+        // params.no_alloc   = false;
+        // // LOG_DEBUG("mem_size %u ", params.mem_size);
+        // struct ggml_context* ctx = ggml_init(params);  // for  alphas_cumprod and is_using_v_parameterization check
+        // GGML_ASSERT(ctx != NULL);
         // xxxx_9999
         // ggml_tensor* alphas_cumprod_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, TIMESTEPS);
         // calculate_alphas_cumprod((float*)alphas_cumprod_tensor->data);
@@ -192,7 +192,7 @@ public:
         bool success = model_loader.load_tensors(tensors, backend, ignore_tensors);
         if (!success) {
             LOG_ERROR("load tensors from model loader failed");
-            ggml_free(ctx);
+            // ggml_free(ctx);
             return false;
         }
 
@@ -270,14 +270,13 @@ public:
         // }
 
         LOG_DEBUG("finished loaded file");
-        ggml_free(ctx);
+        // ggml_free(ctx);
         return true;
     }
 
-
     void apply_lora(const std::string& lora_name, float multiplier) {
-        int64_t t0                 = ggml_time_ms();
-        std::string st_file_path   = path_join(lora_model_dir, lora_name + ".safetensors");
+        int64_t t0 = ggml_time_ms();
+        std::string st_file_path = path_join(lora_model_dir, lora_name + ".safetensors");
         std::string ckpt_file_path = path_join(lora_model_dir, lora_name + ".ckpt");
         std::string file_path;
         if (file_exists(st_file_path)) {
@@ -332,18 +331,21 @@ public:
         curr_lora_state = lora_state;
     }
 
-    // xxxx_debug: cond_stage_model ... start_engine() .. y = forward(text, skip, height, width), ..., stop_engine()
+    // xxxx_1111: clip ... start_engine() .. y = forward(text, skip, height, width), ..., stop_engine()
     std::pair<ggml_tensor*, ggml_tensor*> get_learned_condition(ggml_context* work_ctx,
                                                                 const std::string& text,
                                                                 int clip_skip,
                                                                 int width,
                                                                 int height) {
+        // text = 4 guys standing in back of sea, sunset, four person face to camera !!!, clip_skip = -1, width = 1024, height = 1024
         // get_learned_condition clip_skip = -1
-
-        auto tokens_and_weights     = cond_stage_model->tokenize(text, true);
-        std::vector<int>& tokens    = tokens_and_weights.first;
+        // xxxx_1111
+        auto tokens_and_weights = cond_stage_model->tokenize(text, true);
+        std::vector<int>& tokens = tokens_and_weights.first;
         std::vector<float>& weights = tokens_and_weights.second;
-
+        // CheckPoint("tokens.size() = %ld, weights.size() = %ld, s = [%s]", tokens.size(), weights.size(), text.c_str());
+        // tokens.size() = 77, weights.size() = 77, s = [4 guys standing in back of sea, sunset, four person face to camera !!!]
+        // tokens.size() = 77, weights.size() = 77, s = [black and white]
 
         cond_stage_model->set_clip_skip(clip_skip);
         int64_t t0  = ggml_time_ms();
@@ -356,11 +358,9 @@ public:
         size_t chunk_count = tokens.size() / chunk_len;
 
         // CheckPoint("text = %s, chunk_count = %ld", text.c_str(), chunk_count);
-        for (int chunk_idx = 0; chunk_idx < chunk_count; chunk_idx++) {
-            std::vector<int> chunk_tokens(tokens.begin() + chunk_idx * chunk_len,
-                                          tokens.begin() + (chunk_idx + 1) * chunk_len);
-            std::vector<float> chunk_weights(weights.begin() + chunk_idx * chunk_len,
-                                             weights.begin() + (chunk_idx + 1) * chunk_len);
+        for (int i = 0; i < chunk_count; i++) {
+            std::vector<int> chunk_tokens(tokens.begin() + i * chunk_len, tokens.begin() + (i + 1) * chunk_len);
+            std::vector<float> chunk_weights(weights.begin() + i * chunk_len, weights.begin() + (i + 1) * chunk_len);
 
             auto input_ids = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens);
             struct ggml_tensor* input_ids2 = NULL;
@@ -375,17 +375,28 @@ public:
 
                 input_ids2 = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens);
             }
+            // CheckPoint("max_token_idx = %ld", max_token_idx);
+            // ggml_tensor_dump(input_ids);
+            // ggml_tensor_dump(input_ids2);
+            // max_token_idx = 17
+            //    i32 [    77,     1,     1,     1], 
+            //    i32 [    77,     1,     1,     1], 
+            // max_token_idx = 4
+            // i32 [    77,     1,     1,     1], 
+            // i32 [    77,     1,     1,     1], 
 
-            // CheckPoint("chunk_idx = %d", chunk_idx);
+            // xxxx_debug vae->clip encoder ...
+            cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, false, &chunk_hidden_states, work_ctx);
+            // ggml_tensor_dump(chunk_hidden_states);
+            // f32 [  2048,    77,     1,     1], 
 
-            // xxxx_8888
-            cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, false, 
-                &chunk_hidden_states, work_ctx);
-            if (version == VERSION_XL && chunk_idx == 0) {
-                // ==> CheckPoint("chunk_idx == 0");
+            if (version == VERSION_XL && i == 0) {
                 cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, true, &pooled, work_ctx);
+                // ggml_tensor_dump(pooled);
+                // f32 [  1280,     1,     1,     1], 
+
             } else {
-                CheckPoint("chunk_idx != 0");
+                CheckPoint("i != 0");
             }
 
             int64_t t1 = ggml_time_ms();
@@ -409,22 +420,35 @@ public:
                 }
                 float new_mean = ggml_tensor_mean(result);
 
-                CheckPoint("original_mean = %.4f, new_mean = %.4f", original_mean, new_mean);
-                ggml_tensor_scale(result, (original_mean / new_mean));
+                // CheckPoint("original_mean = %.4f, new_mean = %.4f", original_mean, new_mean);
+                // original_mean = 0.0237, new_mean = 0.0237
+                // ggml_tensor_scale(result, (original_mean / new_mean));
+                // ggml_tensor_dump(result);
+                // f32 [  2048,    77,     1,     1], 
+
             }
             hidden_states_vec.insert(hidden_states_vec.end(), (float*)result->data, ((float*)result->data) + ggml_nelements(result));
         }
 
         hidden_states = vector_to_ggml_tensor(work_ctx, hidden_states_vec);
+        // ggml_tensor_dump(hidden_states);
+        // f32 [157696,     1,     1,     1],  2048x77
         hidden_states = ggml_reshape_2d(work_ctx,
                                         hidden_states,
                                         chunk_hidden_states->ne[0],
                                         ggml_nelements(hidden_states) / chunk_hidden_states->ne[0]);
+        ggml_tensor_dump(hidden_states);
+        // f32 [  2048,    77,     1,     1],  (reshaped)
 
         ggml_tensor* vec = NULL;
-        if (version == VERSION_XL) {
+        if (version == VERSION_XL) { // xxxx_debug
             int out_dim = 256;
-            vec = ggml_new_tensor_1d(work_ctx, GGML_TYPE_F32, diffusion_model->unet.adm_in_channels);
+            vec = ggml_new_tensor_1d(work_ctx, GGML_TYPE_F32, diffusion_model->unet.adm_in_channels); // 2816
+            // CheckPoint("vec");
+            // ggml_tensor_dump(vec);
+            // vec
+            //    f32 [  2816,     1,     1,     1], 
+
             // [0:1280]
             size_t offset = 0;
             memcpy(vec->data, pooled->data, ggml_nbytes(pooled));
@@ -437,6 +461,11 @@ public:
 
             std::vector<float> timesteps = {(float)height, (float)width};
             ggml_tensor* embed_view = ggml_view_2d(work_ctx, vec, out_dim, 2, ggml_type_size(GGML_TYPE_F32) * out_dim, offset);
+            // CheckPoint("embed_view, out_dim = %d", out_dim);
+            // ggml_tensor_dump(embed_view);
+            // embed_view, out_dim = 256
+            // f32 [   256,     2,     1,     1],  (view)
+
             offset += ggml_nbytes(embed_view);
             set_timestep_embedding(timesteps, embed_view, out_dim);
 
@@ -456,8 +485,16 @@ public:
             offset += ggml_nbytes(embed_view);
             set_timestep_embedding(timesteps, embed_view, out_dim);
 
+            // ggml_tensor_dump(vec);
+            // f32 [  2816,     1,     1,     1], 
+
             GGML_ASSERT(offset == ggml_nbytes(vec));
         }
+
+        // ggml_tensor_dump(hidden_states);
+        // ggml_tensor_dump(vec);
+        // f32 [  2048,    77,     1,     1],  (reshaped)
+        // f32 [  2816,     1,     1,     1], 
 
         return {hidden_states, vec};
     }
@@ -475,6 +512,27 @@ public:
                         float control_strength,
                         float cfg_scale,
                         const std::vector<float>& sigmas) {
+        // CheckPoint("sample: control_strength = %.4f, cfg_scale = %.4f, sigmas.size() = %ld", control_strength, cfg_scale, sigmas.size());
+        // sample: control_strength = 0.9000, cfg_scale = 1.8000, sigmas.size() = 2
+
+        ggml_tensor_dump(x_t);
+        ggml_tensor_dump(noise);
+        ggml_tensor_dump(c);
+        ggml_tensor_dump(c_vector);
+        ggml_tensor_dump(uc);
+        ggml_tensor_dump(uc_vector);
+        ggml_tensor_dump(control_hint);
+
+        // sample: control_strength = 0.9000, cfg_scale = 1.8000, sigmas.size() = 2
+        // f32 [   128,   128,     4,     1],  x_t
+        // f32 [   128,   128,     4,     1],  noise
+        // f32 [  2048,    77,     1,     1],  (reshaped) c
+        // f32 [  2816,     1,     1,     1],  c_vector
+        // f32 [  2048,    77,     1,     1],  (reshaped) uc
+        // f32 [  2816,     1,     1,     1],  uc_vector
+        // tensor == NULL
+        // printf("---------------------------------------------------------------------\n");
+
         size_t steps = sigmas.size() - 1;
         // x_t = load_tensor_from_file(work_ctx, "./rand0.bin");
         // print_ggml_tensor(x_t);
@@ -499,6 +557,9 @@ public:
 
         // xxxx_9999
         auto denoise = [&](ggml_tensor* input, float sigma, int step) -> ggml_tensor* {
+            CheckPoint("denoise: sigma = %.4f, step = %d", sigma, step); 
+            // ggml_tensor_dump(input); //    f32 [   128,   128,     4,     1], 
+
             if (step == 1) {
                 pretty_progress(0, (int)steps, 0);
             }
@@ -515,9 +576,15 @@ public:
             float t = denoiser->sigma_to_t(sigma);
             std::vector<float> timesteps_vec(x->ne[3], t);  // [N, ]
             auto timesteps = vector_to_ggml_tensor(work_ctx, timesteps_vec);
-
             copy_ggml_tensor(noised_input, input);
             ggml_tensor_scale(noised_input, c_in);
+
+            // timesteps -- c_out = -0.0292, c_in = 0.9996
+            // ggml_tensor_dump(timesteps);
+            // ggml_tensor_dump(noised_input);
+            // f32 [     1,     1,     1,     1], 
+            // f32 [   128,   128,     4,     1], 
+
 
             std::vector<struct ggml_tensor*> controls;
 
@@ -528,6 +595,7 @@ public:
             }
 
             // cond
+            // unet->forward ...
             diffusion_model->compute(n_threads,
                                      noised_input,
                                      timesteps,
@@ -538,7 +606,7 @@ public:
                                      &out_cond);
 
             // uncond
-            // xxxx_9999
+            // unet->forward ...
             if (control_hint != NULL) {
                 control_net->compute(n_threads, noised_input, control_hint, timesteps, uc, uc_vector);
                 controls = control_net->controls;
@@ -569,7 +637,7 @@ public:
             return denoised;
         };
 
-        // xxxx_debug !!!
+        // xxxx_1111 !!!
         sample_k_diffusion(denoise, work_ctx, x, sigmas, rng); // ==> update x !!!
 
         if (control_net) {
@@ -583,14 +651,17 @@ public:
     // ldm.models.diffusion.ddpm.LatentDiffusion.get_first_stage_encoding
     ggml_tensor* get_first_stage_encoding(ggml_context* work_ctx, ggml_tensor* moments) {
         // ldm.modules.distributions.distributions.DiagonalGaussianDistribution.sample
-        ggml_tensor* latent       = ggml_new_tensor_4d(work_ctx, moments->type, moments->ne[0], moments->ne[1], moments->ne[2] / 2, moments->ne[3]);
+        CheckPoint("moments");
+        // ggml_tensor_dump(moments); // f32 [   128,   128,     8,     1]
+
+        ggml_tensor* latent = ggml_new_tensor_4d(work_ctx, moments->type, moments->ne[0], moments->ne[1], moments->ne[2] / 2, moments->ne[3]);
         struct ggml_tensor* noise = ggml_dup_tensor(work_ctx, latent);
         ggml_tensor_set_f32_randn(noise, rng);
         {
             float mean   = 0;
             float logvar = 0;
             float value  = 0;
-            float std_   = 0;
+            float std   = 0;
             for (int i = 0; i < latent->ne[3]; i++) {
                 for (int j = 0; j < latent->ne[2]; j++) {
                     for (int k = 0; k < latent->ne[1]; k++) {
@@ -598,8 +669,8 @@ public:
                             mean   = ggml_tensor_get_f32(moments, l, k, j, i);
                             logvar = ggml_tensor_get_f32(moments, l, k, j + (int)latent->ne[2], i);
                             logvar = std::max(-30.0f, std::min(logvar, 20.0f));
-                            std_   = std::exp(0.5f * logvar);
-                            value  = mean + std_ * ggml_tensor_get_f32(noise, l, k, j, i);
+                            std   = std::exp(0.5f * logvar);
+                            value  = mean + std * ggml_tensor_get_f32(noise, l, k, j, i);
                             value  = value * scale_factor;
                             ggml_tensor_set_f32(latent, value, l, k, j, i);
                         }
@@ -620,17 +691,26 @@ public:
                                                  x->ne[3]);  // batch
         int64_t t0          = ggml_time_ms();
         if (decode) {
-            CheckPoint("decode == True");
             ggml_tensor_scale(x, 1.0f / scale_factor);
+            CheckPoint("decode == true, scale_factor = %.6f", scale_factor);
+            ggml_tensor_dump(x);
+
         } else {
-            CheckPoint("decode == False");
             ggml_tensor_scale_input(x);
+            // CheckPoint("decode == false, scale_factor = %.6f", scale_factor);
+            // ggml_tensor_dump(x);
+            // decode == false, scale_factor = 0.130250
+            // f32 [  1024,  1024,     3,     1], 
         }
+
         first_stage_model->compute(n_threads, x, decode, &result); // got result !!!
         first_stage_model->free_compute_buffer();
         if (decode) {
             ggml_tensor_scale_output(result);
         }
+        CheckPoint("result");
+        ggml_tensor_dump(result);
+        // f32 [   128,   128,     8,     1], 
 
         int64_t t1 = ggml_time_ms();
         LOG_DEBUG("computing vae [mode: %s] graph completed, taking %.2fs", decode ? "DECODE" : "ENCODE", (t1 - t0) * 1.0f / 1000);
@@ -721,6 +801,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
 
     int sample_steps = sigmas.size() - 1;
 
+#if 1
     // Apply lora
     auto result_pair = extract_and_remove_lora(prompt);
     std::unordered_map<std::string, float> lora_f2m = result_pair.first;  // lora_name -> multiplier
@@ -736,7 +817,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     sd_ctx->sd->apply_loras(lora_f2m);
     int64_t t1 = ggml_time_ms();
     LOG_INFO("apply_loras completed, taking %.2fs", (t1 - t0) * 1.0f / 1000);
-
+#endif
 
     // 1) xxxx_debug !!!
     ggml_tensor* init_img              = NULL;
@@ -753,8 +834,8 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     // CheckPoint("cfg_scale = %.4f", cfg_scale); // cfg_scale = 1.8
     if (cfg_scale != 1.0) {
         auto uncond_pair = sd_ctx->sd->get_learned_condition(work_ctx, negative_prompt, clip_skip, width, height);
-        uc               = uncond_pair.first;
-        uc_vector        = uncond_pair.second;  // [adm_in_channels, ]
+        uc = uncond_pair.first;
+        uc_vector = uncond_pair.second;  // [adm_in_channels, ]
     }
     t1 = ggml_time_ms();
     LOG_INFO("get_learned_condition completed, taking %" PRId64 " ms", t1 - t0);
@@ -778,7 +859,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
 
     for (int b = 0; b < batch_count; b++) {
         int64_t sampling_start = ggml_time_ms();
-        int64_t cur_seed       = seed + b;
+        int64_t cur_seed = seed + b;
         LOG_INFO("generating image: %i/%i - seed %" PRId64, b + 1, batch_count, cur_seed);
 
         sd_ctx->sd->rng->manual_seed(cur_seed);
@@ -788,7 +869,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
             x_t = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
             ggml_tensor_set_f32_randn(x_t, sd_ctx->sd->rng);
         } else {
-            x_t   = init_latent;
+            x_t = init_latent;
             noise = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
             ggml_tensor_set_f32_randn(noise, sd_ctx->sd->rng);
         }
@@ -797,10 +878,8 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
         struct ggml_tensor* x_0 = sd_ctx->sd->sample(work_ctx,
                                                      x_t,
                                                      noise,
-                                                     c,
-                                                     c_vector,
-                                                     uc,
-                                                     uc_vector,
+                                                     c, c_vector,
+                                                     uc, uc_vector,
                                                      image_hint,
                                                      control_strength,
                                                      cfg_scale,
@@ -820,7 +899,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     LOG_INFO("decoding %zu latents", final_latents.size());
     std::vector<struct ggml_tensor*> decoded_images;  // collect decoded images
     for (size_t i = 0; i < final_latents.size(); i++) {
-        t1                      = ggml_time_ms();
+        t1 = ggml_time_ms();
         struct ggml_tensor* img = sd_ctx->sd->decode_first_stage(work_ctx, final_latents[i] /* x_0 */);
         // print_ggml_tensor(img);
         if (img != NULL) {
@@ -925,6 +1004,9 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
                     int batch_count,
                     const sd_image_t* control_cond,
                     float control_strength) {
+    CheckPoint("prompt = %s, negative = %s, cfg_scale = %.4f, width = %d, height = %d, sample_steps = %d, strength = %.4f, seed = %ldd, control_strength = %.4f",
+        prompt_c_str, negative_prompt_c_str, cfg_scale, width, height, sample_steps, strength, seed, control_strength);
+
     LOG_DEBUG("img2img %dx%d", width, height);
     if (sd_ctx == NULL) {
         return NULL;
@@ -955,20 +1037,40 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
     ggml_tensor* init_img = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, width, height, 3, 1);
     sd_image_to_tensor(init_image.data, init_img);
     ggml_tensor* init_latent = NULL;
-    ggml_tensor* moments = sd_ctx->sd->encode_first_stage(work_ctx, init_img);
-    init_latent          = sd_ctx->sd->get_first_stage_encoding(work_ctx, moments);
 
-    // print_ggml_tensor(init_latent);
+    ggml_tensor* moments = sd_ctx->sd->encode_first_stage(work_ctx, init_img);
+    init_latent = sd_ctx->sd->get_first_stage_encoding(work_ctx, moments);
+    // CheckPoint("init_img");
+    // ggml_tensor_dump(init_img);
+    // ggml_tensor_dump(moments);
+    // ggml_tensor_dump(init_latent);
+    // f32 [  1024,  1024,     3,     1], 
+    // f32 [   128,   128,     8,     1], 
+    // f32 [   128,   128,     4,     1], 
+
+    // vae->encoder(...)
     size_t t1 = ggml_time_ms();
     LOG_INFO("encode_first_stage completed, taking %.2fs", (t1 - t0) * 1.0f / 1000);
-
     std::vector<float> sigmas = sd_ctx->sd->denoiser->get_sigmas(sample_steps);
 
     size_t t_enc = static_cast<size_t>(sample_steps * strength);
     LOG_INFO("target t_enc is %zu steps", t_enc);
     std::vector<float> sigma_sched;
     sigma_sched.assign(sigmas.begin() + sample_steps - t_enc - 1, sigmas.end());
-
+    // CheckPoint("sample_steps = %d, strength = %.4f, t_enc = %ld", sample_steps, strength, t_enc);
+    // printf("sigmas: ");
+    // for (size_t i = 0; i < sigmas.size(); i++) {
+    //     printf("%.4f ", sigmas[i]);
+    // }
+    // printf("\n");
+    // printf("sigma_sched: ");
+    // for (size_t i = 0; i < sigma_sched.size(); i++) {
+    //     printf("%.4f ", sigma_sched[i]);
+    // }
+    // printf("\n");
+    // sample_steps = 5, strength = 0.1500, t_enc = 0
+    // sigmas: 14.6147 4.0861 1.6156 0.6951 0.0292 0.0000 
+    // sigma_sched: 0.0292 0.0000 
     sd_image_t* result_images = generate_image(sd_ctx,
                                                work_ctx,
                                                init_latent,
@@ -997,4 +1099,24 @@ int ggml_cuda_available()
     return 1;
 #endif
     return 0;    
+}
+
+void ggml_tensor_dump(struct ggml_tensor* tensor)
+{
+    char output_buffer[1024];
+    if (tensor == NULL) {
+        printf("tensor == NULL\n");
+        return;
+    }
+
+    size_t len = 0;
+    if (tensor->name) {
+        len += snprintf(output_buffer + len, sizeof(output_buffer) - len, "%6s [%6ld,%6ld,%6ld,%6ld], %s", 
+            ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1], tensor->ne[2], tensor->ne[3], tensor->name);
+    } else {
+        len += snprintf(output_buffer + len, sizeof(output_buffer) - len, "%6s [%6ld,%6ld,%6ld,%6ld], %s", 
+            ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1], tensor->ne[2], tensor->ne[3], "none");
+    }
+
+    printf("%s\n", output_buffer);
 }

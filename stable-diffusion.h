@@ -159,6 +159,7 @@ SD_API uint8_t* preprocess_canny(uint8_t* img,
                                  bool inverse);
 
 int ggml_cuda_available();
+void ggml_tensor_dump(struct ggml_tensor* tensor);
 
 #ifdef __cplusplus
 }

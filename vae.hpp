@@ -345,6 +345,7 @@ protected:
 public:
     AutoencodingEngine(bool decode_only       = true)
         : decode_only(decode_only) {
+
         blocks["decoder"] = std::shared_ptr<GGMLBlock>(new Decoder(dd_config.ch,
                                                                    dd_config.out_ch,
                                                                    dd_config.ch_mult,
@@ -361,10 +362,10 @@ public:
                                                                        dd_config.z_channels,
                                                                        dd_config.double_z));
             int factor = dd_config.double_z ? 2 : 1;
-
+            // embed_dim = 4, factor=2, dd_config.z_channels = 4
             blocks["quant_conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(embed_dim * factor,
                                                                          dd_config.z_channels * factor,
-                                                                         {1, 1}));
+                                                                         {1, 1})); // ==> 8, 8, 1, 1
         }
     }
 

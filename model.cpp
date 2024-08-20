@@ -564,12 +564,9 @@ void bf16_to_f32_vec(uint16_t* src, float* dst, int64_t n) {
 }
 
 // xxxx_8888
-void convert_tensor(void* src,
-                    ggml_type src_type,
-                    void* dst,
-                    ggml_type dst_type,
-                    int nrows,
-                    int n_per_row) {
+void convert_tensor(void* src, ggml_type src_type,
+                    void* dst, ggml_type dst_type,
+                    int nrows, int n_per_row) {
     int n = nrows * n_per_row;
     if (src_type == dst_type) {
         size_t nbytes = n * ggml_type_size(src_type) / ggml_blck_size(src_type);
@@ -605,6 +602,7 @@ void convert_tensor(void* src,
         buf.resize(sizeof(float) * n);
         char* src_data_f32 = buf.data();
         qtype.to_float(src, (float*)src_data_f32, n);
+
         if (dst_type == GGML_TYPE_F16) {
             ggml_fp32_to_fp16_row((float*)src_data_f32, (ggml_fp16_t*)dst, n);
         } else {
@@ -1357,7 +1355,7 @@ std::vector<TensorStorage> remove_duplicates(const std::vector<TensorStorage>& v
 
     for (size_t i = 0; i < vec.size(); ++i) {
         const std::string& current_name = vec[i].name;
-        auto it                         = name_to_index_map.find(current_name);
+        auto it = name_to_index_map.find(current_name);
 
         if (it != name_to_index_map.end()) {
             res[it->second] = vec[i];
@@ -1459,6 +1457,12 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb, ggml_backend
                 continue;
             }
 
+            // ggml_tensor_dump(dst_tensor);
+            // CheckPoint("tensor_storage: %s: %s, %ld [%ld, %ld, %ld, %ld]", 
+            //     tensor_storage.name.c_str(), ggml_type_name(tensor_storage.type), tensor_storage.n_dims, 
+            //     tensor_storage.ne[0], tensor_storage.ne[1], tensor_storage.ne[2], tensor_storage.ne[3]);
+            // CheckPoint("--------------------------------------------");
+
             size_t nbytes_to_read = tensor_storage.nbytes_to_read();
 
             if (dst_tensor->buffer == NULL || ggml_backend_buffer_is_host(dst_tensor->buffer)) {
@@ -1469,6 +1473,7 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb, ggml_backend
 
                     if (tensor_storage.is_bf16) {
                         // inplace op
+                        CheckPoint("is bf16 !!!");
                         bf16_to_f32_vec((uint16_t*)dst_tensor->data, (float*)dst_tensor->data, tensor_storage.nelements());
                     }
                 } else {
@@ -1480,15 +1485,16 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb, ggml_backend
                         bf16_to_f32_vec((uint16_t*)read_buffer.data(), (float*)read_buffer.data(), tensor_storage.nelements());
                     }
 
-                    convert_tensor((void*)read_buffer.data(), tensor_storage.type, dst_tensor->data,
-                                   dst_tensor->type, (int)tensor_storage.nelements() / (int)tensor_storage.ne[0], (int)tensor_storage.ne[0]);
+                    convert_tensor((void*)read_buffer.data(), tensor_storage.type, dst_tensor->data, dst_tensor->type, 
+                        (int)tensor_storage.nelements() / (int)tensor_storage.ne[0], (int)tensor_storage.ne[0]);
                 }
-            } else {
+            } else { // backend set ...
                 read_buffer.resize(tensor_storage.nbytes());
                 read_data(tensor_storage, (char*)read_buffer.data(), nbytes_to_read);
 
                 if (tensor_storage.is_bf16) {
                     // inplace op
+                    CheckPoint("is bf16 !!!");
                     bf16_to_f32_vec((uint16_t*)read_buffer.data(), (float*)read_buffer.data(), tensor_storage.nelements());
                 }
 

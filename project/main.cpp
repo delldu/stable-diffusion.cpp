@@ -118,7 +118,7 @@ int text2image(ModelParams params)
 
     net.set_device(1);
     net.start_engine();
-    net.dump();
+    // net.dump();
 
     net.load_weight(&model, "unet.");
     // net.load_weight(&model, "vae.");
@@ -127,7 +127,7 @@ int text2image(ModelParams params)
     net.stop_engine();
 
 
-    // model.clear();
+    model.clear();
 
 
     CheckPoint("OK !");

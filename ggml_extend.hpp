@@ -49,7 +49,7 @@ __STATIC_INLINE__ void ggml_log_callback_default(ggml_log_level level, const cha
 }
 
 __STATIC_INLINE__ void ggml_tensor_set_f32_randn(struct ggml_tensor* tensor, std::shared_ptr<RNG> rng) {
-    uint32_t n                        = (uint32_t)ggml_nelements(tensor);
+    uint32_t n = (uint32_t)ggml_nelements(tensor);
     std::vector<float> random_numbers = rng->randn(n);
     for (uint32_t i = 0; i < n; i++) {
         ggml_set_f32_1d(tensor, i, random_numbers[i]);
@@ -201,9 +201,9 @@ __STATIC_INLINE__ void copy_ggml_tensor(struct ggml_tensor* dst, struct ggml_ten
         return;
     }
     struct ggml_init_params params;
-    params.mem_size          = 10 * 1024 * 1024;  // for padding
-    params.mem_buffer        = NULL;
-    params.no_alloc          = false;
+    params.mem_size = 10 * 1024 * 1024;  // for padding
+    params.mem_buffer = NULL;
+    params.no_alloc = false;
     struct ggml_context* ctx = ggml_init(params);
     if (!ctx) {
         LOG_ERROR("ggml_init() failed");

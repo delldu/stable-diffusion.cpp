@@ -6,10 +6,10 @@
 #include "ggml_nn.h"
 #include "vocab.h"
 
+#include <codecvt>
 #include <map>
 #include <regex>
 #include <set>
-#include <codecvt>
 
 enum SDVersion {
     VERSION_1_x,
@@ -39,7 +39,7 @@ static std::string utf32_to_utf8(const std::u32string& utf32_str)
 
 static std::u32string unicode_value_to_utf32(int unicode_value)
 {
-    std::u32string utf32_string = {static_cast<char32_t>(unicode_value)};
+    std::u32string utf32_string = { static_cast<char32_t>(unicode_value) };
     return utf32_string;
 }
 
@@ -79,7 +79,6 @@ const int BOS_TOKEN_ID = 49406;
 const int EOS_TOKEN_ID = 49407;
 const int PAD_TOKEN_ID = 49407;
 
-
 static std::vector<std::pair<int, std::u32string>> bytes_to_unicode()
 {
     std::vector<std::pair<int, std::u32string>> byte_unicode_pairs;
@@ -118,9 +117,10 @@ private:
     int encoder_len;
     int bpe_len;
 
-    static std::string strip(const std::string& str) {
+    static std::string strip(const std::string& str)
+    {
         std::string::size_type start = str.find_first_not_of(" \t\n\r\v\f");
-        std::string::size_type end   = str.find_last_not_of(" \t\n\r\v\f");
+        std::string::size_type end = str.find_last_not_of(" \t\n\r\v\f");
 
         if (start == std::string::npos) {
             // String contains only whitespace characters
@@ -130,13 +130,15 @@ private:
         return str.substr(start, end - start + 1);
     }
 
-    static std::string whitespace_clean(std::string text) {
+    static std::string whitespace_clean(std::string text)
+    {
         text = std::regex_replace(text, std::regex(R"(\s+)"), " ");
         text = strip(text);
         return text;
     }
 
-    static std::set<std::pair<std::u32string, std::u32string>> get_pairs(const std::vector<std::u32string>& subwords) {
+    static std::set<std::pair<std::u32string, std::u32string>> get_pairs(const std::vector<std::u32string>& subwords)
+    {
         std::set<std::pair<std::u32string, std::u32string>> pairs;
         if (subwords.size() == 0) {
             return pairs;
@@ -153,10 +155,13 @@ private:
 
 public:
     CLIPTokenizer(SDVersion version = VERSION_1_x)
-        : version(version) {}
+        : version(version)
+    {
+    }
 
     // xxxx_debug
-    void load_from_merges(const std::string& merges_utf8_str) {
+    void load_from_merges(const std::string& merges_utf8_str)
+    {
         auto byte_unicode_pairs = bytes_to_unicode();
         // printf("byte_unicode_pairs have %lu pairs \n", byte_unicode_pairs.size());
         byte_encoder = std::map<int, std::u32string>(byte_unicode_pairs.begin(), byte_unicode_pairs.end());
@@ -195,7 +200,7 @@ public:
         int i = 0;
         for (const auto& token : vocab) {
             encoder[token] = i;
-            decoder[i]     = token;
+            decoder[i] = token;
             i++;
         }
         encoder_len = i;
@@ -214,7 +219,8 @@ public:
         bpe_len = rank;
     };
 
-    std::u32string bpe(const std::u32string& token) {
+    std::u32string bpe(const std::u32string& token)
+    {
         std::vector<std::u32string> word;
 
         for (int i = 0; i < token.size() - 1; i++) {
@@ -230,16 +236,16 @@ public:
 
         while (true) {
             auto min_pair_iter = std::min_element(pairs.begin(),
-                                                  pairs.end(),
-                                                  [&](const std::pair<std::u32string, std::u32string>& a,
-                                                      const std::pair<std::u32string, std::u32string>& b) {
-                                                      if (bpe_ranks.find(a) == bpe_ranks.end()) {
-                                                          return false;
-                                                      } else if (bpe_ranks.find(b) == bpe_ranks.end()) {
-                                                          return true;
-                                                      }
-                                                      return bpe_ranks.at(a) < bpe_ranks.at(b);
-                                                  });
+                pairs.end(),
+                [&](const std::pair<std::u32string, std::u32string>& a,
+                    const std::pair<std::u32string, std::u32string>& b) {
+                    if (bpe_ranks.find(a) == bpe_ranks.end()) {
+                        return false;
+                    } else if (bpe_ranks.find(b) == bpe_ranks.end()) {
+                        return true;
+                    }
+                    return bpe_ranks.at(a) < bpe_ranks.at(b);
+                });
 
             const std::pair<std::u32string, std::u32string>& bigram = *min_pair_iter;
 
@@ -247,7 +253,7 @@ public:
                 break;
             }
 
-            std::u32string first  = bigram.first;
+            std::u32string first = bigram.first;
             std::u32string second = bigram.second;
             std::vector<std::u32string> new_word;
             int32_t i = 0;
@@ -289,14 +295,15 @@ public:
         return result;
     }
 
-    std::vector<int> encode(std::string text) {
+    std::vector<int> encode(std::string text)
+    {
         std::string original_text = text;
         std::vector<int32_t> bpe_tokens;
         text = whitespace_clean(text);
         std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
 
         std::regex pat(R"(<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[[:alpha:]]+|[[:digit:]]|[^[:space:][:alpha:][:digit:]]+)",
-                       std::regex::icase);
+            std::regex::icase);
 
         std::smatch matches;
         std::string str = text;
@@ -310,7 +317,7 @@ public:
                     utf32_token += byte_encoder[b];
                 }
                 auto bpe_strs = bpe(utf32_token);
-                size_t start  = 0;
+                size_t start = 0;
                 size_t pos;
                 while ((pos = bpe_strs.find(' ', start)) != std::u32string::npos) {
                     auto bpe_str = bpe_strs.substr(start, pos - start);
@@ -329,13 +336,13 @@ public:
     }
 };
 
-
-static std::vector<std::pair<std::string, float>> parse_prompt_attention(const std::string& text) {
+static std::vector<std::pair<std::string, float>> parse_prompt_attention(const std::string& text)
+{
     std::vector<std::pair<std::string, float>> res;
     std::vector<int> round_brackets;
     std::vector<int> square_brackets;
 
-    float round_bracket_multiplier  = 1.1f;
+    float round_bracket_multiplier = 1.1f;
     float square_bracket_multiplier = 1 / 1.1f;
 
     std::regex re_attention(R"(\\\(|\\\)|\\\[|\\\]|\\\\|\\|\(|\[|:([+-]?[.\d]+)\)|\)|\]|[^\\()\[\]:]+|:)");
@@ -351,7 +358,7 @@ static std::vector<std::pair<std::string, float>> parse_prompt_attention(const s
     std::string remaining_text = text;
 
     while (std::regex_search(remaining_text, m, re_attention)) {
-        std::string text   = m[0];
+        std::string text = m[0];
         std::string weight = m[1];
 
         if (text == "(") {
@@ -370,9 +377,9 @@ static std::vector<std::pair<std::string, float>> parse_prompt_attention(const s
             multiply_range(square_brackets.back(), square_bracket_multiplier);
             square_brackets.pop_back();
         } else if (text == "\\(") {
-            res.push_back({text.substr(1), 1.0f});
+            res.push_back({ text.substr(1), 1.0f });
         } else {
-            res.push_back({text, 1.0f});
+            res.push_back({ text, 1.0f });
         }
 
         remaining_text = m.suffix();
@@ -387,7 +394,7 @@ static std::vector<std::pair<std::string, float>> parse_prompt_attention(const s
     }
 
     if (res.empty()) {
-        res.push_back({"", 1.0f});
+        res.push_back({ "", 1.0f });
     }
 
     int i = 0;
@@ -414,7 +421,8 @@ struct MultiheadAttention {
     Linear v_proj;
     Linear out_proj;
 
-    void create_weight_tensors(struct ggml_context* ctx) {
+    void create_weight_tensors(struct ggml_context* ctx)
+    {
         q_proj.in_features = embed_dim;
         q_proj.out_features = embed_dim;
         q_proj.has_bias = bias;
@@ -436,7 +444,8 @@ struct MultiheadAttention {
         out_proj.create_weight_tensors(ctx);
     }
 
-    void setup_weight_names(const char *prefix) {
+    void setup_weight_names(const char* prefix)
+    {
         char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "q_proj.");
@@ -450,48 +459,48 @@ struct MultiheadAttention {
     }
 
     // x: [N, n_token, embed_dim]
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, bool mask = false) {
-        int64_t N       = x->ne[2];
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, bool mask = false)
+    {
+        int64_t N = x->ne[2];
         int64_t n_token = x->ne[1];
-        int64_t d_head  = embed_dim / n_head;
+        int64_t d_head = embed_dim / n_head;
 
         struct ggml_tensor* q = q_proj.forward(ctx, x);
-        q = ggml_reshape_4d(ctx, q, d_head, n_head, n_token, N);   // [N, n_token, n_head, d_head]
-        q = ggml_cont(ctx, ggml_permute(ctx, q, 0, 2, 1, 3));      // [N, n_head, n_token, d_head]
-        q = ggml_reshape_3d(ctx, q, d_head, n_token, n_head * N);  // [N * n_head, n_token, d_head]
+        q = ggml_reshape_4d(ctx, q, d_head, n_head, n_token, N); // [N, n_token, n_head, d_head]
+        q = ggml_cont(ctx, ggml_permute(ctx, q, 0, 2, 1, 3)); // [N, n_head, n_token, d_head]
+        q = ggml_reshape_3d(ctx, q, d_head, n_token, n_head * N); // [N * n_head, n_token, d_head]
 
         struct ggml_tensor* k = k_proj.forward(ctx, x);
-        k = ggml_reshape_4d(ctx, k, d_head, n_head, n_token, N);   // [N, n_token, n_head, d_head]
-        k = ggml_cont(ctx, ggml_permute(ctx, k, 0, 2, 1, 3));      // [N, n_head, n_token, d_head]
-        k = ggml_reshape_3d(ctx, k, d_head, n_token, n_head * N);  // [N * n_head, n_token, d_head]
+        k = ggml_reshape_4d(ctx, k, d_head, n_head, n_token, N); // [N, n_token, n_head, d_head]
+        k = ggml_cont(ctx, ggml_permute(ctx, k, 0, 2, 1, 3)); // [N, n_head, n_token, d_head]
+        k = ggml_reshape_3d(ctx, k, d_head, n_token, n_head * N); // [N * n_head, n_token, d_head]
 
         struct ggml_tensor* v = v_proj.forward(ctx, x);
-        v = ggml_reshape_4d(ctx, v, d_head, n_head, n_token, N);   // [N, n_token, n_head, d_head]
-        v = ggml_cont(ctx, ggml_permute(ctx, v, 1, 2, 0, 3));      // [N, n_head, d_head, n_token]
-        v = ggml_reshape_3d(ctx, v, n_token, d_head, n_head * N);  // [N * n_head, d_head, n_token]
+        v = ggml_reshape_4d(ctx, v, d_head, n_head, n_token, N); // [N, n_token, n_head, d_head]
+        v = ggml_cont(ctx, ggml_permute(ctx, v, 1, 2, 0, 3)); // [N, n_head, d_head, n_token]
+        v = ggml_reshape_3d(ctx, v, n_token, d_head, n_head * N); // [N * n_head, d_head, n_token]
 
-        struct ggml_tensor* kqv = ggml_nn_attention(ctx, q, k, v, mask);  // [N * n_head, n_token, d_head]
+        struct ggml_tensor* kqv = ggml_nn_attention(ctx, q, k, v, mask); // [N * n_head, n_token, d_head]
 
         kqv = ggml_reshape_4d(ctx, kqv, d_head, n_token, n_head, N);
-        kqv = ggml_cont(ctx, ggml_permute(ctx, kqv, 0, 2, 1, 3));      // [N, n_token, n_head, d_head]
-        x   = ggml_reshape_3d(ctx, kqv, d_head * n_head, n_token, N);  // [N, n_token, d_head * n_head]
+        kqv = ggml_cont(ctx, ggml_permute(ctx, kqv, 0, 2, 1, 3)); // [N, n_token, n_head, d_head]
+        x = ggml_reshape_3d(ctx, kqv, d_head * n_head, n_token, N); // [N, n_token, d_head * n_head]
 
-        x = out_proj.forward(ctx, x);  // [N, n_token, embed_dim]
+        x = out_proj.forward(ctx, x); // [N, n_token, embed_dim]
         return x;
     }
 };
 
-
-
 struct CLIPMLP {
     int64_t d_model;
-    int64_t intermediate_size;    
+    int64_t intermediate_size;
     bool use_gelu = true;
 
     Linear fc1;
     Linear fc2;
 
-    void create_weight_tensors(struct ggml_context* ctx) {
+    void create_weight_tensors(struct ggml_context* ctx)
+    {
         fc1.in_features = d_model;
         fc1.out_features = intermediate_size;
         fc1.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
@@ -501,7 +510,8 @@ struct CLIPMLP {
         fc2.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
     }
 
-    void setup_weight_names(const char *prefix) {
+    void setup_weight_names(const char* prefix)
+    {
         char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "fc1.");
@@ -511,8 +521,8 @@ struct CLIPMLP {
         fc2.setup_weight_names(s);
     }
 
-
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x)
+    {
         // x: [N, n_token, d_model]
 
         x = fc1.forward(ctx, x);
@@ -527,7 +537,7 @@ struct CLIPMLP {
 };
 
 struct CLIPLayer {
-    int64_t d_model;  // hidden_size/embed_dim
+    int64_t d_model; // hidden_size/embed_dim
     int64_t n_head;
     int64_t intermediate_size;
 
@@ -536,7 +546,8 @@ struct CLIPLayer {
     LayerNorm layer_norm2;
     CLIPMLP mlp;
 
-    void create_weight_tensors(struct ggml_context* ctx) {
+    void create_weight_tensors(struct ggml_context* ctx)
+    {
         self_attn.embed_dim = d_model;
         self_attn.n_head = n_head;
         self_attn.bias = true;
@@ -547,14 +558,14 @@ struct CLIPLayer {
         layer_norm2.normalized_shape = d_model;
         layer_norm2.create_weight_tensors(ctx);
 
-
         mlp.d_model = d_model;
         mlp.intermediate_size = intermediate_size;
         // mlp.use_gelu = true;
         mlp.create_weight_tensors(ctx);
     }
 
-    void setup_weight_names(const char *prefix) {
+    void setup_weight_names(const char* prefix)
+    {
         char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "self_attn.");
@@ -567,8 +578,8 @@ struct CLIPLayer {
         mlp.setup_weight_names(s);
     }
 
-
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, bool mask = true) {
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, bool mask = true)
+    {
         // x: [N, n_token, d_model]
         x = ggml_add(ctx, x, self_attn.forward(ctx, layer_norm1.forward(ctx, x), mask));
         x = ggml_add(ctx, x, mlp.forward(ctx, layer_norm2.forward(ctx, x)));
@@ -585,7 +596,8 @@ struct CLIPEncoder {
 
     CLIPLayer layers[32];
 
-    void create_weight_tensors(struct ggml_context* ctx) {
+    void create_weight_tensors(struct ggml_context* ctx)
+    {
         for (int i = 0; i < n_layer; i++) {
             layers[i].d_model = d_model;
             layers[i].n_head = n_head;
@@ -594,7 +606,8 @@ struct CLIPEncoder {
         }
     }
 
-    void setup_weight_names(const char *prefix) {
+    void setup_weight_names(const char* prefix)
+    {
         char s[GGML_MAX_NAME];
 
         for (int i = 0; i < n_layer; i++) {
@@ -603,7 +616,8 @@ struct CLIPEncoder {
         }
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int clip_skip = -1, bool mask = true) {
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int clip_skip = -1, bool mask = true)
+    {
         // x: [N, n_token, d_model]
         int layer_idx = n_layer - 1;
         if (clip_skip > 0) {
@@ -614,7 +628,7 @@ struct CLIPEncoder {
             if (i == layer_idx + 1) {
                 break;
             }
-            x = layers[i].forward(ctx, x, mask);  // [N, n_token, d_model]
+            x = layers[i].forward(ctx, x, mask); // [N, n_token, d_model]
         }
         return x;
     }
@@ -625,21 +639,23 @@ struct CLIPEmbeddings {
     int64_t vocab_size = 49408;
     int64_t num_positions = 77;
 
-    struct ggml_tensor *token_embedding_weight;
-    struct ggml_tensor *position_embedding_weight;
+    struct ggml_tensor* token_embedding_weight;
+    struct ggml_tensor* position_embedding_weight;
 
-
-    void create_weight_tensors(struct ggml_context* ctx) {
+    void create_weight_tensors(struct ggml_context* ctx)
+    {
         token_embedding_weight = ggml_new_tensor_2d(ctx, GGML_TYPE_Q8_0, embed_dim, vocab_size); // [768, 49408, 1, 1]
         position_embedding_weight = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, embed_dim, num_positions); // [768, 77, 1, 1]
     }
 
-    void setup_weight_names(const char *prefix) {
+    void setup_weight_names(const char* prefix)
+    {
         ggml_format_name(token_embedding_weight, "%s%s", prefix, "token_embedding.weight");
         ggml_format_name(position_embedding_weight, "%s%s", prefix, "position_embedding.weight");
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids) {
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids)
+    {
         // input_ids: [N, n_token]
         GGML_ASSERT(input_ids->ne[0] == position_embedding_weight->ne[1]);
         input_ids = ggml_reshape_3d(ctx, input_ids, input_ids->ne[0], 1, input_ids->ne[1]);
@@ -647,48 +663,47 @@ struct CLIPEmbeddings {
         token_embedding = ggml_reshape_3d(ctx, token_embedding, token_embedding->ne[0], token_embedding->ne[1], token_embedding->ne[3]);
 
         // token_embedding + position_embedding
-        auto x = ggml_add(ctx, token_embedding, position_embedding_weight);  // [N, n_token, embed_dim]
+        auto x = ggml_add(ctx, token_embedding, position_embedding_weight); // [N, n_token, embed_dim]
         return x;
     }
 };
 
-
 enum CLIPVersion {
-    OPENAI_CLIP_VIT_L_14,   // SD 1.x and SDXL
-    OPEN_CLIP_VIT_H_14,     // SD 2.x
-    OPEN_CLIP_VIT_BIGG_14,  // SDXL
+    OPENAI_CLIP_VIT_L_14, // SD 1.x and SDXL
+    OPEN_CLIP_VIT_H_14, // SD 2.x
+    OPEN_CLIP_VIT_BIGG_14, // SDXL
 };
 
 struct CLIPTextModel {
     CLIPVersion version = OPENAI_CLIP_VIT_L_14;
-    int32_t vocab_size        = 49408;
-    int32_t n_token           = 77;  // max_position_embeddings
-    int32_t hidden_size       = 768;
+    int32_t vocab_size = 49408;
+    int32_t n_token = 77; // max_position_embeddings
+    int32_t hidden_size = 768;
     int32_t intermediate_size = 3072;
-    int32_t n_head            = 12;
-    int32_t n_layer           = 12;    // num_hidden_layers
-    int32_t projection_dim    = 1280;  // only for OPEN_CLIP_VIT_BIGG_14
-    int32_t clip_skip         = -1;
+    int32_t n_head = 12;
+    int32_t n_layer = 12; // num_hidden_layers
+    int32_t projection_dim = 1280; // only for OPEN_CLIP_VIT_BIGG_14
+    int32_t clip_skip = -1;
     int clip_skip_value = -1;
 
-
-    struct ggml_tensor *text_projection;
+    struct ggml_tensor* text_projection;
     CLIPEmbeddings embeddings;
     CLIPEncoder encoder;
     LayerNorm final_layer_norm;
 
     // ----------------------------------------------------------------------------------
-    void create_weight_tensors(struct ggml_context* ctx) {
+    void create_weight_tensors(struct ggml_context* ctx)
+    {
         if (version == OPEN_CLIP_VIT_H_14) {
-            hidden_size       = 1024;
+            hidden_size = 1024;
             intermediate_size = 4096;
-            n_head            = 16;
-            n_layer           = 24;
-        } else if (version == OPEN_CLIP_VIT_BIGG_14) {  // CLIPTextModelWithProjection
-            hidden_size       = 1280;
+            n_head = 16;
+            n_layer = 24;
+        } else if (version == OPEN_CLIP_VIT_BIGG_14) { // CLIPTextModelWithProjection
+            hidden_size = 1280;
             intermediate_size = 5120;
-            n_head            = 20;
-            n_layer           = 32;
+            n_head = 20;
+            n_layer = 32;
         }
 
         set_clip_skip(clip_skip_value);
@@ -706,13 +721,14 @@ struct CLIPTextModel {
         encoder.d_model = hidden_size;
         encoder.n_head = n_head;
         encoder.intermediate_size = intermediate_size;
-        encoder.create_weight_tensors(ctx); 
+        encoder.create_weight_tensors(ctx);
 
         final_layer_norm.normalized_shape = hidden_size;
         final_layer_norm.create_weight_tensors(ctx);
     }
 
-    void setup_weight_names(const char *prefix) {
+    void setup_weight_names(const char* prefix)
+    {
         char s[GGML_MAX_NAME];
 
         if (version == OPEN_CLIP_VIT_BIGG_14) {
@@ -729,18 +745,18 @@ struct CLIPTextModel {
         final_layer_norm.setup_weight_names(s);
     }
 
-
-    void set_clip_skip(int skip) {
+    void set_clip_skip(int skip)
+    {
         if (skip <= 0) {
             return;
         }
         clip_skip = skip;
     }
 
-
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids,
-                                size_t max_token_idx = 0, bool return_pooled   = false) {
-        auto x = embeddings.forward(ctx, input_ids);  // [N, n_token, hidden_size], xxxx_debug
+        size_t max_token_idx = 0, bool return_pooled = false)
+    {
+        auto x = embeddings.forward(ctx, input_ids); // [N, n_token, hidden_size], xxxx_debug
         x = encoder.forward(ctx, x, return_pooled ? -1 : clip_skip, true);
         if (return_pooled) {
             x = final_layer_norm.forward(ctx, x);
@@ -748,15 +764,14 @@ struct CLIPTextModel {
 
         if (return_pooled) {
             // auto text_projection = params["text_projection"];
-            ggml_tensor* pooled  = ggml_view_1d(ctx, x, hidden_size, x->nb[1] * max_token_idx);
+            ggml_tensor* pooled = ggml_view_1d(ctx, x, hidden_size, x->nb[1] * max_token_idx);
             pooled = ggml_mul_mat(ctx, ggml_cont(ctx, ggml_transpose(ctx, text_projection)), pooled);
             return pooled;
         }
 
-        return x;  // [N, n_token, hidden_size]
+        return x; // [N, n_token, hidden_size]
     }
 };
-
 
 struct TextEncoder : GGMLNetwork {
     // SDVersion version = VERSION_1_x;
@@ -766,12 +781,14 @@ struct TextEncoder : GGMLNetwork {
     CLIPTextModel text_model;
     CLIPTextModel text_model2;
 
-    void set_clip_skip(int clip_skip) {
+    void set_clip_skip(int clip_skip)
+    {
         text_model.set_clip_skip(clip_skip);
         text_model2.set_clip_skip(clip_skip);
     }
 
-    void create_weight_tensors(struct ggml_context* ctx) {
+    void create_weight_tensors(struct ggml_context* ctx)
+    {
         // if (clip_skip <= 0) {
         //     clip_skip = 1;
         //     if (version == VERSION_XL) {
@@ -788,7 +805,8 @@ struct TextEncoder : GGMLNetwork {
         text_model2.create_weight_tensors(ctx);
     }
 
-    void setup_weight_names(const char *prefix) {
+    void setup_weight_names(const char* prefix)
+    {
         char s[GGML_MAX_NAME];
 
         // snprintf(s, sizeof(s), "%s%s", prefix, "transformer.text_model.");
@@ -800,9 +818,9 @@ struct TextEncoder : GGMLNetwork {
         text_model2.setup_weight_names(s);
     }
 
-
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids, struct ggml_tensor* input_ids2, // negative prompt ...
-                                size_t max_token_idx = 0, bool return_pooled   = false) {
+        size_t max_token_idx = 0, bool return_pooled = false)
+    {
 
         size_t N = input_ids->ne[1];
         size_t n_token = input_ids->ne[0];
@@ -819,35 +837,34 @@ struct TextEncoder : GGMLNetwork {
             return text_model2.forward(ctx, input_ids2, max_token_idx, return_pooled);
         }
 
-        auto hidden_states = text_model.forward(ctx, input_ids);  // [N, n_token, hidden_size]
+        auto hidden_states = text_model.forward(ctx, input_ids); // [N, n_token, hidden_size]
         hidden_states = ggml_reshape_4d(ctx,
-                                        hidden_states,
-                                        hidden_states->ne[0],
-                                        hidden_states->ne[1],
-                                        hidden_states->ne[2],
-                                        hidden_states->ne[3]);
+            hidden_states,
+            hidden_states->ne[0],
+            hidden_states->ne[1],
+            hidden_states->ne[2],
+            hidden_states->ne[3]);
         hidden_states = ggml_cont(ctx, ggml_permute(ctx, hidden_states, 2, 0, 1, 3));
 
-        auto hidden_states2 = text_model2.forward(ctx, input_ids2);  // [N, n_token, hidden_size2]
+        auto hidden_states2 = text_model2.forward(ctx, input_ids2); // [N, n_token, hidden_size2]
         hidden_states2 = ggml_reshape_4d(ctx,
-                                         hidden_states2,
-                                         hidden_states2->ne[0],
-                                         hidden_states2->ne[1],
-                                         hidden_states2->ne[2],
-                                         hidden_states2->ne[3]);
+            hidden_states2,
+            hidden_states2->ne[0],
+            hidden_states2->ne[1],
+            hidden_states2->ne[2],
+            hidden_states2->ne[3]);
         hidden_states2 = ggml_cont(ctx, ggml_permute(ctx, hidden_states2, 2, 0, 1, 3));
 
-        hidden_states = ggml_concat(ctx, hidden_states, hidden_states2, 2);  // [N, n_token, hidden_size + hidden_size2]
+        hidden_states = ggml_concat(ctx, hidden_states, hidden_states2, 2); // [N, n_token, hidden_size + hidden_size2]
 
         hidden_states = ggml_cont(ctx, ggml_permute(ctx, hidden_states, 1, 2, 0, 3));
         hidden_states = ggml_reshape_3d(ctx, hidden_states, hidden_states->ne[0], n_token, N);
         return hidden_states;
     }
 
-
     void pad_tokens(std::vector<int>& tokens, std::vector<float>& weights, bool padding = false)
     {
-        if (! padding)
+        if (!padding)
             return;
 
         size_t max_length = text_model.n_token;
@@ -883,7 +900,7 @@ struct TextEncoder : GGMLNetwork {
 
         new_tokens.push_back(EOS_TOKEN_ID);
         new_weights.push_back(1.0);
-        tokens  = new_tokens;
+        tokens = new_tokens;
         weights = new_weights;
 
         // if (padding)
@@ -892,7 +909,6 @@ struct TextEncoder : GGMLNetwork {
             weights.insert(weights.end(), length - weights.size(), 1.0);
         }
     }
-
 
     std::pair<std::vector<int>, std::vector<float>> tokenize(std::string text, bool padding = false)
     {
@@ -913,9 +929,8 @@ struct TextEncoder : GGMLNetwork {
         // pad_tokens(tokens, weights, max_length, padding);
         pad_tokens(tokens, weights, padding);
 
-        return {tokens, weights};
+        return { tokens, weights };
     }
 };
 
-
-#endif  // __CLIP_HPP__
+#endif // __CLIP_HPP__
