@@ -1,7 +1,6 @@
 #ifndef __UNET_HPP__
 #define __UNET_HPP__
 
-#define GGML_ENGINE_IMPLEMENTATION
 #include "ggml_engine.h"
 #include "ggml_nn.h"
 

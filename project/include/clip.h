@@ -1,7 +1,6 @@
 #ifndef __CLIP_HPP__
 #define __CLIP_HPP__
 
-#define GGML_ENGINE_IMPLEMENTATION
 #include "ggml_engine.h"
 #include "ggml_nn.h"
 #include "vocab.h"

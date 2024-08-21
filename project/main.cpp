@@ -4,9 +4,15 @@
 #include <unistd.h>
 
 #include "tensor.h"
-// #include "include/vae.h"
-#include "include/unet.h"
+#include "include/vae.h"
+// #include "include/unet.h"
 // #include "include/clip.h"
+
+#include "include/denoiser.h"
+
+#define _GGML_ENGINE_H
+#define GGML_ENGINE_IMPLEMENTATION
+#include "include/ggml_engine.h"
 
 struct ModelParams {
     int device = 1; // 0 -- cpu, 1 -- cuda 0
@@ -96,39 +102,42 @@ int text2image(ModelParams params)
     print_params(params);
 
 
-    GGMLModel model;
-    model.preload(params.model_path);
-    model.remap("first_stage_model.", "vae.");
-    model.remap("model.diffusion_model.", "unet.");
-    model.remap(".transformer_blocks.", ".transformer.");
-    model.remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
-    model.remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
+    // GGMLModel model;
+    // model.preload(params.model_path);
+    // model.remap("first_stage_model.", "vae.");
+    // model.remap("model.diffusion_model.", "unet.");
+    // model.remap(".transformer_blocks.", ".transformer.");
+    // model.remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
+    // model.remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
 
-    model.dump();
-
-
-    // AutoEncoderKL net;
-    UNetModel net;
-    // TextEncoder net;
-
-    // // net.set_device(params.device);
-    // // // net.load(params.model_path, "first_stage_model.");
-    // // // net.load(params.model_path, "model.diffusion_model.");
-    // // net.load(params.model_path, "cond_stage_model.");
-
-    net.set_device(1);
-    net.start_engine();
-    // net.dump();
-
-    net.load_weight(&model, "unet.");
-    // net.load_weight(&model, "vae.");
-    // net.load_weight(&model, "clip.");
-
-    net.stop_engine();
+    // model.dump();
 
 
-    model.clear();
+    // // AutoEncoderKL net;
+    // UNetModel net;
+    // // TextEncoder net;
 
+    // // // net.set_device(params.device);
+    // // // // net.load(params.model_path, "first_stage_model.");
+    // // // // net.load(params.model_path, "model.diffusion_model.");
+    // // // net.load(params.model_path, "cond_stage_model.");
+
+    // net.set_device(1);
+    // net.start_engine();
+    // // net.dump();
+
+    // net.load_weight(&model, "unet.");
+    // // net.load_weight(&model, "vae.");
+    // // net.load_weight(&model, "clip.");
+
+    // net.stop_engine();
+
+
+    // model.clear();
+
+    // // Denoiser denoiser;
+    // // denoiser.init();
+    // // denoiser.dump();
 
     CheckPoint("OK !");
 
