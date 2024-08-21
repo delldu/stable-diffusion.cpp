@@ -362,9 +362,9 @@ public:
             std::vector<int> chunk_tokens(tokens.begin() + i * chunk_len, tokens.begin() + (i + 1) * chunk_len);
             std::vector<float> chunk_weights(weights.begin() + i * chunk_len, weights.begin() + (i + 1) * chunk_len);
 
-            auto input_ids = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens);
-            struct ggml_tensor* input_ids2 = NULL;
-            size_t max_token_idx           = 0;
+            auto input_large_14 = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens); // OPENAI_CLIP_VIT_L_14 ...
+            struct ggml_tensor* input_bigg_14 = NULL;
+            size_t max_token_idx = 0;
             if (version == VERSION_XL) {
                 auto it = std::find(chunk_tokens.begin(), chunk_tokens.end(), EOS_TOKEN_ID);
                 if (it != chunk_tokens.end()) {
@@ -373,11 +373,11 @@ public:
 
                 max_token_idx = std::min<size_t>(std::distance(chunk_tokens.begin(), it), chunk_tokens.size() - 1);
 
-                input_ids2 = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens);
+                input_bigg_14 = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens); // OPEN_CLIP_VIT_BIGG_14 ...
             }
             // CheckPoint("max_token_idx = %ld", max_token_idx);
-            // ggml_tensor_dump(input_ids);
-            // ggml_tensor_dump(input_ids2);
+            // ggml_tensor_dump(input_large_14);
+            // ggml_tensor_dump(input_bigg_14);
             // max_token_idx = 17
             //    i32 [    77,     1,     1,     1], 
             //    i32 [    77,     1,     1,     1], 
@@ -386,31 +386,24 @@ public:
             // i32 [    77,     1,     1,     1], 
 
             // xxxx_debug vae->clip encoder ...
-            cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, false, &chunk_hidden_states, work_ctx);
+            cond_stage_model->compute(n_threads, input_large_14, input_bigg_14, max_token_idx, false, &chunk_hidden_states, work_ctx);
             // ggml_tensor_dump(chunk_hidden_states);
             // f32 [  2048,    77,     1,     1], 
 
             if (version == VERSION_XL && i == 0) {
-                cond_stage_model->compute(n_threads, input_ids, input_ids2, max_token_idx, true, &pooled, work_ctx);
+                cond_stage_model->compute(n_threads, input_large_14, input_bigg_14, max_token_idx, true, &pooled, work_ctx);
                 // ggml_tensor_dump(pooled);
                 // f32 [  1280,     1,     1,     1], 
-
-            } else {
-                CheckPoint("i != 0");
             }
 
             int64_t t1 = ggml_time_ms();
             LOG_DEBUG("computing condition graph completed, taking %" PRId64 " ms", t1 - t0);
             ggml_tensor* result = ggml_dup_tensor(work_ctx, chunk_hidden_states);
             {
-                float original_mean = ggml_tensor_mean(chunk_hidden_states);
+                // float original_mean = ggml_tensor_mean(chunk_hidden_states);
+                // result -- f32 [  2048,    77,     1,     1],
                 for (int i2 = 0; i2 < chunk_hidden_states->ne[2]; i2++) {
                     for (int i1 = 0; i1 < chunk_hidden_states->ne[1]; i1++) {
-                        // ?
-                        if (fabs(chunk_weights[i1] - 1.0) >= 0.0001) {
-                            CheckPoint("chunk_weights[%d] = %.4f", i1, chunk_weights[i1]);
-                        }
-
                         for (int i0 = 0; i0 < chunk_hidden_states->ne[0]; i0++) {
                             float value = ggml_tensor_get_f32(chunk_hidden_states, i0, i1, i2);
                             value *= chunk_weights[i1];
@@ -418,7 +411,7 @@ public:
                         }
                     }
                 }
-                float new_mean = ggml_tensor_mean(result);
+                // float new_mean = ggml_tensor_mean(result);
 
                 // CheckPoint("original_mean = %.4f, new_mean = %.4f", original_mean, new_mean);
                 // original_mean = 0.0237, new_mean = 0.0237
@@ -487,7 +480,6 @@ public:
 
             // ggml_tensor_dump(vec);
             // f32 [  2816,     1,     1,     1], 
-
             GGML_ASSERT(offset == ggml_nbytes(vec));
         }
 
@@ -666,12 +658,16 @@ public:
                 for (int j = 0; j < latent->ne[2]; j++) {
                     for (int k = 0; k < latent->ne[1]; k++) {
                         for (int l = 0; l < latent->ne[0]; l++) {
+#if 1                            
                             mean   = ggml_tensor_get_f32(moments, l, k, j, i);
                             logvar = ggml_tensor_get_f32(moments, l, k, j + (int)latent->ne[2], i);
                             logvar = std::max(-30.0f, std::min(logvar, 20.0f));
                             std   = std::exp(0.5f * logvar);
                             value  = mean + std * ggml_tensor_get_f32(noise, l, k, j, i);
                             value  = value * scale_factor;
+#else
+                            value = ggml_tensor_get_f32(moments, l, k, j, i) * scale_factor;
+#endif                            
                             ggml_tensor_set_f32(latent, value, l, k, j, i);
                         }
                     }
@@ -682,21 +678,21 @@ public:
     }
 
     ggml_tensor* compute_first_stage(ggml_context* work_ctx, ggml_tensor* x, bool decode) {
-        int64_t W           = x->ne[0];
-        int64_t H           = x->ne[1];
+        int64_t W = x->ne[0];
+        int64_t H = x->ne[1];
         ggml_tensor* result = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32,
                                                  decode ? (W * 8) : (W / 8),  // width
                                                  decode ? (H * 8) : (H / 8),  // height
                                                  decode ? 3 : 8, // channels
                                                  x->ne[3]);  // batch
-        int64_t t0          = ggml_time_ms();
+        int64_t t0 = ggml_time_ms();
         if (decode) {
             ggml_tensor_scale(x, 1.0f / scale_factor);
             CheckPoint("decode == true, scale_factor = %.6f", scale_factor);
             ggml_tensor_dump(x);
 
         } else {
-            ggml_tensor_scale_input(x);
+            ggml_tensor_scale_input(x); // x = (x - 0.5)*2.0
             // CheckPoint("decode == false, scale_factor = %.6f", scale_factor);
             // ggml_tensor_dump(x);
             // decode == false, scale_factor = 0.130250
@@ -820,14 +816,14 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
 #endif
 
     // 1) xxxx_debug !!!
-    ggml_tensor* init_img              = NULL;
+    ggml_tensor* init_img = NULL;
     // Get learned condition
-    t0                    = ggml_time_ms();
-    auto cond_pair        = sd_ctx->sd->get_learned_condition(work_ctx, prompt, clip_skip, width, height);
-    ggml_tensor* c        = cond_pair.first;
+    t0 = ggml_time_ms();
+    auto cond_pair = sd_ctx->sd->get_learned_condition(work_ctx, prompt, clip_skip, width, height);
+    ggml_tensor* c = cond_pair.first;
     ggml_tensor* c_vector = cond_pair.second;  // [adm_in_channels, ]
 
-    struct ggml_tensor* uc        = NULL;
+    struct ggml_tensor* uc = NULL;
     struct ggml_tensor* uc_vector = NULL;
 
     CheckPoint("----------------------------------------------------------");
@@ -957,6 +953,7 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
     params.no_alloc   = false;
     // LOG_DEBUG("mem_size %u ", params.mem_size);
 
+    // text_image_work_space ...
     struct ggml_context* work_ctx = ggml_init(params);
     if (!work_ctx) {
         LOG_ERROR("ggml_init() failed");
@@ -1020,6 +1017,7 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
     params.no_alloc   = false;
     // LOG_DEBUG("mem_size %u ", params.mem_size);
 
+    // image_image_work_space 
     struct ggml_context* work_ctx = ggml_init(params);
     if (!work_ctx) {
         LOG_ERROR("ggml_init() failed");

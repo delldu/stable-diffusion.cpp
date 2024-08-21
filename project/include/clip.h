@@ -617,6 +617,8 @@ struct CLIPEncoder {
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int clip_skip = -1, bool mask = true)
     {
+        clip_skip = 2; // !!!
+
         // x: [N, n_token, d_model]
         int layer_idx = n_layer - 1;
         if (clip_skip > 0) {
@@ -705,7 +707,7 @@ struct CLIPTextModel {
             n_layer = 32;
         }
 
-        set_clip_skip(clip_skip_value);
+        // set_clip_skip(clip_skip_value);
 
         if (version == OPEN_CLIP_VIT_BIGG_14) {
             text_projection = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, projection_dim, hidden_size); // OPEN_CLIP_VIT_BIGG_14
@@ -744,13 +746,13 @@ struct CLIPTextModel {
         final_layer_norm.setup_weight_names(s);
     }
 
-    void set_clip_skip(int skip)
-    {
-        if (skip <= 0) {
-            return;
-        }
-        clip_skip = skip;
-    }
+    // void set_clip_skip(int skip)
+    // {
+    //     if (skip <= 0) {
+    //         return;
+    //     }
+    //     clip_skip = skip;
+    // }
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids,
         size_t max_token_idx = 0, bool return_pooled = false)
@@ -773,27 +775,15 @@ struct CLIPTextModel {
 };
 
 struct TextEncoder : GGMLNetwork {
-    // SDVersion version = VERSION_1_x;
-    // int clip_skip = -1;
+    size_t max_token_idx = 0;
+    bool return_pooled = false;
 
     CLIPTokenizer tokenizer;
     CLIPTextModel text_model;
     CLIPTextModel text_model2;
 
-    void set_clip_skip(int clip_skip)
-    {
-        text_model.set_clip_skip(clip_skip);
-        text_model2.set_clip_skip(clip_skip);
-    }
-
     void create_weight_tensors(struct ggml_context* ctx)
     {
-        // if (clip_skip <= 0) {
-        //     clip_skip = 1;
-        //     if (version == VERSION_XL) {
-        //         clip_skip = 2;
-        //     }
-        // }
         // clip_skip = 2;
         text_model.version = OPENAI_CLIP_VIT_L_14;
         text_model.clip_skip_value = 2;
@@ -817,10 +807,8 @@ struct TextEncoder : GGMLNetwork {
         text_model2.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids, struct ggml_tensor* input_ids2, // negative prompt ...
-        size_t max_token_idx = 0, bool return_pooled = false)
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids, struct ggml_tensor* input_ids2)
     {
-
         size_t N = input_ids->ne[1];
         size_t n_token = input_ids->ne[0];
         if (input_ids != NULL && input_ids->ne[0] > text_model.n_token) {
@@ -931,5 +919,53 @@ struct TextEncoder : GGMLNetwork {
         return { tokens, weights };
     }
 };
+
+
+std::vector<float> timestep_embedding(std::vector<float> timesteps, int dim)
+{
+    // timesteps -- {h, w}, dim -- 256
+    int max_period = 10000;
+
+    size_t N = timesteps.size();
+    int acutual_dim = dim;
+    if (dim % 2 != 0) {
+        acutual_dim = dim + 1; // ==> 256
+    }
+    std::vector<float> embedding(N * acutual_dim, 0.f); // 2 * 256
+    int half = dim / 2;
+    std::vector<float> freqs(half);
+    for (int i = 0; i < half; ++i) {
+        freqs[i] = (float)std::exp(-std::log(max_period) * i / half);
+    }
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < half; ++j) {
+            float arg = timesteps[i] * freqs[j];
+            embedding[i * acutual_dim + j] = std::cos(arg);
+            embedding[i * acutual_dim + j + half] = std::sin(arg);
+        }
+    }
+
+    return embedding; // 256x2 -- 512
+}
+
+std::vector<TENSOR *> clip_encode(TextEncoder *clip, char *text, int height, int width)
+{
+    std::vector<TENSOR *> text_pool;
+
+    // clip->max_token_idx = 1;
+    // clip->return_pooled = false;
+
+    // TENSOR *y = clip->engine_forward(input_ids, input_ids2);
+
+    // clip->max_token_idx = 1;
+    // clip->return_pooled = false;
+
+    // TENSOR *pooled = clip->engine_forward(input_ids, input_ids2);
+
+    return text_pool;
+}
+
+
+
 
 #endif // __CLIP_HPP__

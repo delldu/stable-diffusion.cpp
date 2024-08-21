@@ -426,14 +426,16 @@ public:
         blocks["mlp"] = std::shared_ptr<GGMLBlock>(new CLIPMLP(d_model, intermediate_size));
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, bool mask = true) {
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
+        bool mask = true;
         // x: [N, n_token, d_model]
         auto self_attn   = std::dynamic_pointer_cast<MultiheadAttention>(blocks["self_attn"]);
         auto layer_norm1 = std::dynamic_pointer_cast<LayerNorm>(blocks["layer_norm1"]);
         auto layer_norm2 = std::dynamic_pointer_cast<LayerNorm>(blocks["layer_norm2"]);
         auto mlp         = std::dynamic_pointer_cast<CLIPMLP>(blocks["mlp"]);
 
-        x = ggml_add(ctx, x, self_attn->forward(ctx, layer_norm1->forward(ctx, x), mask));
+        // x = ggml_add(ctx, x, self_attn->forward(ctx, layer_norm1->forward(ctx, x), mask));
+        x = ggml_add(ctx, x, self_attn->forward(ctx, layer_norm1->forward(ctx, x)));
         x = ggml_add(ctx, x, mlp->forward(ctx, layer_norm2->forward(ctx, x)));
         return x;
     }
@@ -455,7 +457,8 @@ public:
         }
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int clip_skip = -1, bool mask = true) {
+    // struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int clip_skip = -1, bool mask = true) {
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int clip_skip = -1) {
         // x: [N, n_token, d_model]
         int layer_idx = n_layer - 1;
         if (clip_skip > 0) {
@@ -469,7 +472,9 @@ public:
             }
             std::string name = "layers." + std::to_string(i);
             auto layer       = std::dynamic_pointer_cast<CLIPLayer>(blocks[name]);
-            x                = layer->forward(ctx, x, mask);  // [N, n_token, d_model]
+            // x                = layer->forward(ctx, x, mask);  // [N, n_token, d_model]
+            x = layer->forward(ctx, x);  // [N, n_token, d_model]
+
             // LOG_DEBUG("layer %d", i);
         }
         return x;
@@ -590,6 +595,7 @@ public:
                                 size_t max_token_idx = 0,
                                 bool return_pooled   = false) {
         // CheckPoint("max_token_idx = %ld", max_token_idx); // 0, 1, 4, 17, 21 ...
+        CheckPoint("clip_skip = %d", clip_skip);
 
         // input_ids: [N, n_token]
         auto embeddings       = std::dynamic_pointer_cast<CLIPEmbeddings>(blocks["embeddings"]);
@@ -597,7 +603,9 @@ public:
         auto final_layer_norm = std::dynamic_pointer_cast<LayerNorm>(blocks["final_layer_norm"]);
 
         auto x = embeddings->forward(ctx, input_ids);  // [N, n_token, hidden_size], xxxx_debug
-        x      = encoder->forward(ctx, x, return_pooled ? -1 : clip_skip, true);
+        // x      = encoder->forward(ctx, x, return_pooled ? -1 : clip_skip, true);
+        x      = encoder->forward(ctx, x, return_pooled ? -1 : clip_skip);
+
         if (return_pooled || with_final_ln) {
             x = final_layer_norm->forward(ctx, x);
         }

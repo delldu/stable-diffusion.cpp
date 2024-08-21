@@ -383,8 +383,8 @@ __STATIC_INLINE__ float ggml_tensor_mean(struct ggml_tensor* src) {
 __STATIC_INLINE__ void ggml_tensor_add(struct ggml_tensor* a, struct ggml_tensor* b) {
     GGML_ASSERT(ggml_nelements(a) == ggml_nelements(b));
     int64_t nelements = ggml_nelements(a);
-    float* vec_a      = (float*)a->data;
-    float* vec_b      = (float*)b->data;
+    float* vec_a = (float*)a->data;
+    float* vec_b = (float*)b->data;
     for (int i = 0; i < nelements; i++) {
         vec_a[i] = vec_a[i] + vec_b[i];
     }
@@ -392,7 +392,7 @@ __STATIC_INLINE__ void ggml_tensor_add(struct ggml_tensor* a, struct ggml_tensor
 
 __STATIC_INLINE__ void ggml_tensor_scale(struct ggml_tensor* src, float scale) {
     int64_t nelements = ggml_nelements(src);
-    float* data       = (float*)src->data;
+    float* data = (float*)src->data;
     for (int i = 0; i < nelements; i++) {
         data[i] = data[i] * scale;
     }
@@ -400,7 +400,7 @@ __STATIC_INLINE__ void ggml_tensor_scale(struct ggml_tensor* src, float scale) {
 
 __STATIC_INLINE__ void ggml_tensor_clamp(struct ggml_tensor* src, float min, float max) {
     int64_t nelements = ggml_nelements(src);
-    float* data       = (float*)src->data;
+    float* data = (float*)src->data;
     for (int i = 0; i < nelements; i++) {
         float val = data[i];
         data[i]   = val < min ? min : (val > max ? max : val);
@@ -410,7 +410,7 @@ __STATIC_INLINE__ void ggml_tensor_clamp(struct ggml_tensor* src, float min, flo
 // convert values from [0, 1] to [-1, 1]
 __STATIC_INLINE__ void ggml_tensor_scale_input(struct ggml_tensor* src) {
     int64_t nelements = ggml_nelements(src);
-    float* data       = (float*)src->data;
+    float* data = (float*)src->data;
     for (int i = 0; i < nelements; i++) {
         float val = data[i];
         data[i]   = val * 2.0f - 1.0f;
@@ -420,7 +420,7 @@ __STATIC_INLINE__ void ggml_tensor_scale_input(struct ggml_tensor* src) {
 // convert values from [-1, 1] to [0, 1]
 __STATIC_INLINE__ void ggml_tensor_scale_output(struct ggml_tensor* src) {
     int64_t nelements = ggml_nelements(src);
-    float* data       = (float*)src->data;
+    float* data = (float*)src->data;
     for (int i = 0; i < nelements; i++) {
         float val = data[i];
         data[i]   = (val + 1.0f) * 0.5f;
@@ -469,6 +469,7 @@ __STATIC_INLINE__ struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx,
     return x;
 }
 
+#if 0
 // w: [OC，IC, KD, 1 * 1]
 // x: [N, IC, IH, IW]
 // b: [OC,]
@@ -521,6 +522,7 @@ __STATIC_INLINE__ struct ggml_tensor* ggml_nn_conv_3d_nx1x1(struct ggml_context*
     }
     return x;  // [N, OC, T, OH * OW]
 }
+#endif
 
 // q: [N * n_head, n_token, d_head]
 // k: [N * n_head, n_k, d_head]
@@ -634,17 +636,17 @@ __STATIC_INLINE__ struct ggml_tensor* vector_to_ggml_tensor_i32(struct ggml_cont
 // }
 
 // Ref: https://github.com/CompVis/stable-diffusion/blob/main/ldm/modules/diffusionmodules/util.py#L151
-__STATIC_INLINE__ std::vector<float> timestep_embedding(std::vector<float> timesteps,
-                                                        int dim,
+__STATIC_INLINE__ std::vector<float> timestep_embedding(std::vector<float> timesteps, // {h, w}
+                                                        int dim, // 256
                                                         int max_period = 10000) {
     // timesteps: [N,]
     // embedding: [N, dim]
-    size_t N        = timesteps.size();
+    size_t N = timesteps.size(); // ==> 2
     int acutual_dim = dim;
     if (dim % 2 != 0) {
-        acutual_dim = dim + 1;
+        acutual_dim = dim + 1; // ==> 256
     }
-    std::vector<float> embedding(N * acutual_dim, 0.f);
+    std::vector<float> embedding(N * acutual_dim, 0.f); // 2 * 256
     int half = dim / 2;
     std::vector<float> freqs(half);
     for (int i = 0; i < half; ++i) {
@@ -652,17 +654,17 @@ __STATIC_INLINE__ std::vector<float> timestep_embedding(std::vector<float> times
     }
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < half; ++j) {
-            float arg                             = timesteps[i] * freqs[j];
-            embedding[i * acutual_dim + j]        = std::cos(arg);
+            float arg = timesteps[i] * freqs[j];
+            embedding[i * acutual_dim + j] = std::cos(arg);
             embedding[i * acutual_dim + j + half] = std::sin(arg);
         }
     }
     return embedding;
 }
 
-__STATIC_INLINE__ void set_timestep_embedding(std::vector<float> timesteps,
-                                              struct ggml_tensor* embedding,
-                                              int dim,
+__STATIC_INLINE__ void set_timestep_embedding(std::vector<float> timesteps, // {h, w}
+                                              struct ggml_tensor* embedding, // 256x2
+                                              int dim, // 256
                                               int max_period = 10000) {
     std::vector<float> embedding_vec = timestep_embedding(timesteps, dim, max_period);
     memcpy(((char*)embedding->data), ((char*)embedding_vec.data()), ggml_nbytes(embedding));
@@ -1148,7 +1150,10 @@ public:
     }
 
     // x: [N, n_token, embed_dim]
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, bool mask = false) {
+    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
+        bool mask = true;
+        // CheckPoint("MultiheadAttention mask = %d", mask); // mask === true
+
         auto q_proj   = std::dynamic_pointer_cast<Linear>(blocks["q_proj"]);
         auto k_proj   = std::dynamic_pointer_cast<Linear>(blocks["k_proj"]);
         auto v_proj   = std::dynamic_pointer_cast<Linear>(blocks["v_proj"]);
