@@ -230,8 +230,8 @@ public:
     struct ggml_tensor* forward(struct ggml_context* ctx,
                                 struct ggml_tensor* x,
                                 struct ggml_tensor* timesteps,
-                                struct ggml_tensor* context,
-                                struct ggml_tensor* y = NULL,
+                                struct ggml_tensor* context,  // cond_latent
+                                struct ggml_tensor* y = NULL, // cond_pooled
                                 std::vector<struct ggml_tensor*> controls = {},
                                 float control_strength  = 0.f) {
         if (context != NULL) {

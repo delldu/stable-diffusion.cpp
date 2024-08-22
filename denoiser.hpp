@@ -139,13 +139,14 @@ static void sample_k_diffusion(denoiser_cb_t model,
     // sample_euler_ancestral
     switch (method) {
         case EULER_A: {
-            struct ggml_tensor* noise = ggml_dup_tensor(work_ctx, x);
-            struct ggml_tensor* d = ggml_dup_tensor(work_ctx, x);
+            struct ggml_tensor* noise = ggml_dup_tensor(work_ctx, x); // noise = 0
+            struct ggml_tensor* d = ggml_dup_tensor(work_ctx, x); // d = 0
 
             for (int i = 0; i < steps; i++) {
                 float sigma = sigmas[i];
 
                 // denoise
+
                 ggml_tensor* denoised = model(x, sigma, i + 1); // unet->forward ...
 
                 // d = (x - denoised) / sigma
@@ -153,7 +154,6 @@ static void sample_k_diffusion(denoiser_cb_t model,
                     float* vec_d = (float*)d->data;
                     float* vec_x = (float*)x->data;
                     float* vec_denoised = (float*)denoised->data;
-
                     for (int i = 0; i < ggml_nelements(d); i++) {
                         vec_d[i] = (vec_x[i] - vec_denoised[i]) / sigma;
                     }
@@ -170,7 +170,6 @@ static void sample_k_diffusion(denoiser_cb_t model,
                 {
                     float* vec_d = (float*)d->data;
                     float* vec_x = (float*)x->data;
-
                     for (int i = 0; i < ggml_nelements(x); i++) {
                         vec_x[i] = vec_x[i] + vec_d[i] * dt;
                     }
@@ -181,7 +180,6 @@ static void sample_k_diffusion(denoiser_cb_t model,
                     {
                         float* vec_x     = (float*)x->data;
                         float* vec_noise = (float*)noise->data;
-
                         for (int i = 0; i < ggml_nelements(x); i++) {
                             vec_x[i] = vec_x[i] + vec_noise[i] * sigma_up;
                         }
@@ -191,7 +189,7 @@ static void sample_k_diffusion(denoiser_cb_t model,
         } break;
         case EULER:  // Implemented without any sigma churn
         {
-            struct ggml_tensor* d = ggml_dup_tensor(work_ctx, x);
+            struct ggml_tensor* d = ggml_dup_tensor(work_ctx, x); // d = 0
 
             for (int i = 0; i < steps; i++) {
                 float sigma = sigmas[i];
@@ -202,7 +200,6 @@ static void sample_k_diffusion(denoiser_cb_t model,
                     float* vec_d = (float*)d->data;
                     float* vec_x = (float*)x->data;
                     float* vec_denoised = (float*)denoised->data;
-
                     for (int j = 0; j < ggml_nelements(d); j++) {
                         vec_d[j] = (vec_x[j] - vec_denoised[j]) / sigma;
                     }
@@ -213,7 +210,6 @@ static void sample_k_diffusion(denoiser_cb_t model,
                 {
                     float* vec_d = (float*)d->data;
                     float* vec_x = (float*)x->data;
-
                     for (int j = 0; j < ggml_nelements(x); j++) {
                         vec_x[j] = vec_x[j] + vec_d[j] * dt;
                     }
