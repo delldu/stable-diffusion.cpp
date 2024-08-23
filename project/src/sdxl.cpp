@@ -5,15 +5,24 @@
 #include "clip.h"
 #include "unet.h"
 #include "denoiser.h"
-
-// #define _GGML_ENGINE_H
-// #define GGML_ENGINE_IMPLEMENTATION
 #include <ggml_engine.h>
 
 struct ControlNet {
     int a = 100; // dummy
 };
 
+struct GGMLModel *load_model(ModelConfig params)
+{
+    struct GGMLModel *model = new GGMLModel();
+    model->preload(params.model_path);
+    model->remap("first_stage_model.", "vae.");
+    model->remap("model.diffusion_model.", "unet.");
+    model->remap(".transformer_blocks.", ".transformer.");
+    model->remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
+    model->remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
+
+    return model;
+}
 
 void print_params(ModelConfig params)
 {
@@ -38,6 +47,12 @@ void print_params(ModelConfig params)
 
 int text2image(ModelConfig params)
 {
+    Denoiser denoiser;
+    TextEncoder clip;
+    AutoEncoderKL vae;
+    UNetModel unet;
+     
+
     printf("Creating image from text ...\n");
 
     params.height -= params.height % 64;
@@ -45,34 +60,69 @@ int text2image(ModelConfig params)
 
     print_params(params);
 
+    GGMLModel *model = load_model(params);
+    check_point(model != NULL);
 
-    // GGMLModel model;
-    // model.preload(params.model_path);
-    // model.remap("first_stage_model.", "vae.");
-    // model.remap("model.diffusion_model.", "unet.");
-    // model.remap(".transformer_blocks.", ".transformer.");
-    // model.remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
-    // model.remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
+    // model->dump();
 
-    // model.dump();
+    denoiser.init();
+
+    clip.set_device(params.device);
+    clip.start_engine();
+    clip.load_weight(model, "clip.");
+
+    std::vector<TENSOR *> positive_latent_pooled = clip_encode(&clip, params.positive, params.height, params.width);
+    check_point(positive_latent_pooled.size() == 2);
+    TENSOR *positive_latent = positive_latent_pooled[0];
+    TENSOR *positive_pooled = positive_latent_pooled[1];
+    check_point(positive_latent);
+    check_point(positive_pooled);
+    tensor_show((char *)"positive_latent", positive_latent);
+    tensor_show((char *)"positive_pooled", positive_pooled);
 
 
-    // // AutoEncoderKL net;
-    // UNetModel net;
-    // // TextEncoder net;
+    std::vector<TENSOR *> negative_latent_pooled = clip_encode(&clip, params.negative, params.height, params.width);
+    check_point(negative_latent_pooled.size() == 2);
+    TENSOR *negative_latent = negative_latent_pooled[0];
+    TENSOR *negative_pooled = negative_latent_pooled[1];
+    check_point(negative_latent);
+    check_point(negative_pooled);
+    tensor_show((char *)"negative_latent", negative_latent);
+    tensor_show((char *)"negative_pooled", negative_pooled);
 
-    // // // net.set_device(params.device);
-    // // // // net.load(params.model_path, "first_stage_model.");
-    // // // // net.load(params.model_path, "model.diffusion_model.");
-    // // // net.load(params.model_path, "cond_stage_model.");
+    clip.stop_engine();
+    CheckPoint("OK !");
+
+
+    vae.set_device(params.device);
+    vae.start_engine();
+    vae.load_weight(model, "vae.");
+
+    vae.stop_engine();
+
+    CheckPoint("OK !");
+
+
+    unet.set_device(params.device);
+    unet.start_engine();
+    unet.load_weight(model, "unet.");
+
+    unet.stop_engine();
+    CheckPoint("OK !");
+
+
+    model->clear();
+
+
+
 
     // net.set_device(1);
     // net.start_engine();
     // // net.dump();
 
-    // net.load_weight(&model, "unet.");
-    // // net.load_weight(&model, "vae.");
-    // // net.load_weight(&model, "clip.");
+    // net.load_model(&model, "unet.");
+    // // net.load_model(&model, "vae.");
+    // // net.load_model(&model, "clip.");
 
     // net.stop_engine();
 
@@ -219,8 +269,8 @@ TENSOR *one_batch_sample(
     return x;
 }
 
-// implement ggml_engine.cpp/ggml_nn.cpp
-#define GGML_NN_IMPLEMENTATION
 #define GGML_ENGINE_IMPLEMENTATION
 #include <ggml_engine.h>
+#define GGML_NN_IMPLEMENTATION
+#include <ggml_nn.h>
 

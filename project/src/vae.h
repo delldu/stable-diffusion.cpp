@@ -38,9 +38,9 @@ struct DownSample {
         struct ggml_tensor* c = NULL;
         if (vae_downsample) {
             c = ggml_pad(ctx, x, 1, 1, 0, 0);
-            c = ggml_nn_conv_2d(ctx, c, op_w, op_b, 2, 2, 0, 0);
+            c = ggml_nn_conv_2d(ctx, c, op_w, op_b, 2, 2, 0, 0, 1, 1);
         } else {
-            c = ggml_nn_conv_2d(ctx, x, op_w, op_b, 2, 2, 1, 1);
+            c = ggml_nn_conv_2d(ctx, x, op_w, op_b, 2, 2, 1, 1, 1, 1);
         }
         return c; // [N, out_channels, h/2, w/2]
     }
@@ -71,7 +71,7 @@ struct UpSample {
     {
         // x: [N, channels, h, w]
         x = ggml_upscale(ctx, x, 2); // [N, channels, h*2, w*2]
-        x = ggml_nn_conv_2d(ctx, x, conv_w, conv_b, 1, 1, 1, 1); // [N, out_channels, h*2, w*2]
+        x = ggml_nn_conv_2d(ctx, x, conv_w, conv_b, 1, 1, 1, 1, 1, 1); // [N, out_channels, h*2, w*2]
         return x;
     }
 };
@@ -138,17 +138,17 @@ struct ResnetBlock {
     {
         // z: [N, in_channels, h, w]
 
-        auto h = ggml_nn_group_norm(ctx, z, norm1_w, norm1_b);
+        auto h = ggml_nn_group_norm(ctx, z, norm1_w, norm1_b, 32 /*num_groups*/);
         h = ggml_silu_inplace(ctx, h);
-        h = ggml_nn_conv_2d(ctx, h, conv1_w, conv1_b, 1, 1, 1, 1); // [N, out_channels, h, w]
-        h = ggml_nn_group_norm(ctx, h, norm2_w, norm2_b);
+        h = ggml_nn_conv_2d(ctx, h, conv1_w, conv1_b, 1, 1, 1, 1, 1, 1); // [N, out_channels, h, w]
+        h = ggml_nn_group_norm(ctx, h, norm2_w, norm2_b, 32 /*num_groups*/);
         h = ggml_silu_inplace(ctx, h);
         // dropout, skip for inference
-        h = ggml_nn_conv_2d(ctx, h, conv2_w, conv2_b, 1, 1, 1, 1); // [N, out_channels, h, w]
+        h = ggml_nn_conv_2d(ctx, h, conv2_w, conv2_b, 1, 1, 1, 1, 1, 1); // [N, out_channels, h, w]
 
         // skip connection
         if (out_channels != in_channels) {
-            z = ggml_nn_conv_2d(ctx, z, nin_shortcut_w, nin_shortcut_b); // [N, out_channels, h, w]
+            z = ggml_nn_conv_2d(ctx, z, nin_shortcut_w, nin_shortcut_b, 1, 1, 0, 0, 1, 1); // [N, out_channels, h, w]
         }
 
         h = ggml_add(ctx, h, z);
@@ -207,16 +207,16 @@ struct AttnBlock {
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x)
     {
-        auto h_ = ggml_nn_group_norm(ctx, x, norm_w, norm_b);
+        auto h_ = ggml_nn_group_norm(ctx, x, norm_w, norm_b, 32 /*num_groups*/);
 
         const int64_t n = h_->ne[3];
         const int64_t c = h_->ne[2];
         const int64_t h = h_->ne[1];
         const int64_t w = h_->ne[0];
 
-        auto q = ggml_nn_conv_2d(ctx, h_, q_w, q_b); // [N, in_channels, h, w]
-        auto k = ggml_nn_conv_2d(ctx, h_, k_w, k_b); // [N, in_channels, h, w]
-        auto v = ggml_nn_conv_2d(ctx, h_, v_w, v_b); // [N, in_channels, h, w]
+        auto q = ggml_nn_conv_2d(ctx, h_, q_w, q_b, 1, 1, 0, 0, 1, 1); // [N, in_channels, h, w]
+        auto k = ggml_nn_conv_2d(ctx, h_, k_w, k_b, 1, 1, 0, 0, 1, 1); // [N, in_channels, h, w]
+        auto v = ggml_nn_conv_2d(ctx, h_, v_w, v_b, 1, 1, 0, 0, 1, 1); // [N, in_channels, h, w]
 
         q = ggml_cont(ctx, ggml_permute(ctx, q, 1, 2, 0, 3)); // [N, h, w, in_channels]
         q = ggml_reshape_3d(ctx, q, c, h * w, n); // [N, h * w, in_channels]
@@ -234,7 +234,7 @@ struct AttnBlock {
         h_ = ggml_reshape_4d(ctx, h_, w, h, c, n); // [N, in_channels, h, w]
 
         // proj_out
-        h_ = ggml_nn_conv_2d(ctx, h_, proj_out_w, proj_out_b); // [N, in_channels, h, w]
+        h_ = ggml_nn_conv_2d(ctx, h_, proj_out_w, proj_out_b, 1, 1, 0, 0, 1, 1); // [N, in_channels, h, w]
 
         h_ = ggml_add(ctx, h_, x);
         return h_;
@@ -366,7 +366,7 @@ struct Encoder {
 
         // conv_in
         auto x = argv[0];
-        auto h = ggml_nn_conv_2d(ctx, x, conv_in_w, conv_in_b, 1, 1, 1, 1); // [N, ch, h, w]
+        auto h = ggml_nn_conv_2d(ctx, x, conv_in_w, conv_in_b, 1, 1, 1, 1, 1, 1); // [N, ch, h, w]
         ggml_set_name(h, "b-start");
         int len_mults = sizeof(ch_mult) / sizeof(int);
         for (int i = 0; i < len_mults; i++) {
@@ -382,11 +382,11 @@ struct Encoder {
         h = mid.attn_1.forward(ctx, h);
         h = mid.block_2.forward(ctx, h); // [N, block_in, h, w]
 
-        h = ggml_nn_group_norm(ctx, h, norm_out_w, norm_out_b);
+        h = ggml_nn_group_norm(ctx, h, norm_out_w, norm_out_b, 32 /*num_groups*/);
         h = ggml_silu_inplace(ctx, h);
 
         // conv_out
-        h = ggml_nn_conv_2d(ctx, h, conv_out_w, conv_out_b, 1, 1, 1, 1); // [N, z_channels*2, h, w]
+        h = ggml_nn_conv_2d(ctx, h, conv_out_w, conv_out_b, 1, 1, 1, 1, 1, 1); // [N, z_channels*2, h, w]
 
         return h;
     }
@@ -514,7 +514,7 @@ struct Decoder {
         // conv_in
         auto z = argv[0];
 
-        auto h = ggml_nn_conv_2d(ctx, z, conv_in_w, conv_in_b, 1, 1, 1, 1); // [N, block_in, h, w]
+        auto h = ggml_nn_conv_2d(ctx, z, conv_in_w, conv_in_b, 1, 1, 1, 1, 1, 1); // [N, block_in, h, w]
 
         h = mid.block_1.forward(ctx, h);
         h = mid.attn_1.forward(ctx, h);
@@ -531,11 +531,11 @@ struct Decoder {
         }
 
         // group norm 32
-        h = ggml_nn_group_norm(ctx, h, norm_out_w, norm_out_b);
+        h = ggml_nn_group_norm(ctx, h, norm_out_w, norm_out_b, 32 /*num_groups*/);
         h = ggml_silu_inplace(ctx, h);
 
         // conv_out
-        h = ggml_nn_conv_2d(ctx, h, conv_out_w, conv_out_b, 1, 1, 1, 1); // [N, out_ch, h, w]
+        h = ggml_nn_conv_2d(ctx, h, conv_out_w, conv_out_b, 1, 1, 1, 1, 1, 1); // [N, out_ch, h, w]
         return h;
     }
 };
@@ -625,14 +625,14 @@ struct AutoEncoderKL : GGMLNetwork {
         if (encode_flag) {
             auto h = encoder.forward(ctx, argc, argv); // [N, 2*z_channels, h/8, w/8]
             // quant_conv
-            h = ggml_nn_conv_2d(ctx, h, quant_conv_w, quant_conv_b); // [N, 2*embed_dim, h/8, w/8]
+            h = ggml_nn_conv_2d(ctx, h, quant_conv_w, quant_conv_b, 1, 1, 0, 0, 1, 1); // [N, 2*embed_dim, h/8, w/8]
             ggml_set_name(h, "b-end");
             return h;
         }
 
         // decode ...
         auto z = argv[1];
-        auto h = ggml_nn_conv_2d(ctx, z, post_quant_conv_w, post_quant_conv_b); // [N, z_channels, h, w]
+        auto h = ggml_nn_conv_2d(ctx, z, post_quant_conv_w, post_quant_conv_b, 1, 1, 0, 0, 1, 1); // [N, z_channels, h, w]
         ggml_set_name(h, "bench-start");
 
         argv[0] = h;

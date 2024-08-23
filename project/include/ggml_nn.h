@@ -15,12 +15,12 @@
 
 struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tensor* x);
 struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w,
-    struct ggml_tensor* b, int s0 = 1, int s1 = 1, int p0 = 0, int p1 = 0, int d0 = 1, int d1 = 1);
+    struct ggml_tensor* b, int s0 /*=1*/, int s1 /*=1*/, int p0 /*=0*/, int p1 /*=0*/, int d0 /*=1*/, int d1 /*=1*/);
 struct ggml_tensor* ggml_nn_layer_norm(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b);
 struct ggml_tensor* ggml_nn_attention(struct ggml_context* ctx, struct ggml_tensor* q, struct ggml_tensor* k, struct ggml_tensor* v, 
-    bool mask = false);
+    bool mask);
 struct ggml_tensor* ggml_nn_group_norm(
-    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, int num_groups = 32);
+    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, int num_groups);
 // struct ggml_tensor* ggml_nn_group_norm_32(struct ggml_context* ctx, struct ggml_tensor* a);
 struct ggml_tensor* ggml_nn_linear(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b);
 
@@ -148,7 +148,7 @@ struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tenso
 }
 
 struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w,
-    struct ggml_tensor* b, int s0 = 1, int s1 = 1, int p0 = 0, int p1 = 0, int d0 = 1, int d1 = 1)
+    struct ggml_tensor* b, int s0 /*=1*/, int s1 /*=1*/, int p0 /*=0*/, int p1 /*=0*/, int d0 /*=1*/, int d1 /*=1*/)
 {
     x = ggml_conv_2d(ctx, w, x, s0, s1, p0, p1, d0, d1);
 
@@ -178,7 +178,7 @@ struct ggml_tensor* ggml_nn_attention(
     struct ggml_tensor* q,
     struct ggml_tensor* k,
     struct ggml_tensor* v,
-    bool mask = false)
+    bool mask /* = false*/)
 {
 #if defined(SD_USE_FLASH_ATTENTION) && !defined(SD_USE_CUBLAS) && !defined(SD_USE_METAL)
     struct ggml_tensor* kqv = ggml_flash_attn(ctx, q, k, v, false); // [N * n_head, n_token, d_head]
@@ -198,7 +198,7 @@ struct ggml_tensor* ggml_nn_attention(
 }
 
 struct ggml_tensor* ggml_nn_group_norm(
-    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, int num_groups = 32)
+    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, int num_groups)
 {
     if (ggml_n_dims(x) >= 3) {
         w = ggml_reshape_4d(ctx, w, 1, 1, w->ne[0], 1);

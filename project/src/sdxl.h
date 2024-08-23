@@ -33,6 +33,7 @@ struct ModelConfig {
 void print_params(ModelConfig params);
 int text2image(ModelConfig params);
 int image2image(ModelConfig params);
+struct GGMLModel *load_model(ModelConfig params);
 
 
 #endif // __SDXL_H__
