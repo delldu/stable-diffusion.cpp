@@ -2,65 +2,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
-#include "tensor.h"
-#include "include/vae.h"
-// #include "include/unet.h"
-// #include "include/clip.h"
+#include "src/sdxl.h"
 
-#include "include/denoiser.h"
-
-#define _GGML_ENGINE_H
-#define GGML_ENGINE_IMPLEMENTATION
-#include "include/ggml_engine.h"
-
-struct ModelParams {
-    int device = 1; // 0 -- cpu, 1 -- cuda 0
-
-    // Input ...
-    char *model_path = (char *)"/opt/ai_models/sdxl_turbo_q8_0.gguf"; // sdxl_turbo_q8_0.gguf";
-    
-    char *input_image = (char *)""; 
-    char *positive = (char *)"";
-    char *negative = (char *)"ugly, deformed, noisy, blurry, NSFW";
-    float config_scale   = 1.8f; // CONST !!!
-    float noise_strength = 0.75f;
-    int sample_steps = 5;
-    int seed = -1;
-
-    // Control ...
-    char *control_model_path = (char *)"";
-    char *control_image_path = (char *)"";
-    float control_strength = 0.9f;
-
-    // Output ...
-    int width = 512;
-    int height = 512;
-    char *output_path = (char *)"output.png";
-
-    int verbose = 0;
-} sdxl_turbo_params;
-
-void print_params(ModelParams params) {
-    printf("Input: \n");
-    printf("    device:            %d\n", params.device);
-    printf("    model path:        '%s'\n", params.model_path);
-    printf("    input image:       '%s'\n", params.input_image);
-    printf("    prompt:            '%s'\n", params.positive);
-    printf("    negative prompt:   '%s'\n", params.negative);
-    printf("    noise strength:    %.2f\n", params.noise_strength);
-    printf("    sample steps:      %d\n", params.sample_steps);
-    printf("    seed:              %d\n", params.seed);
-    printf("Control:\n");
-    printf("    control model:     '%s'\n", params.control_model_path);
-    printf("    control image:     '%s'\n", params.control_image_path);
-    printf("    control strength:  %.2f\n", params.control_strength);
-    printf("Output:\n");
-    printf("    output height:     %d\n", params.height);
-    printf("    output width:      %d\n", params.width);
-    printf("    output path:       '%s'\n", params.output_path);
-}
-
+ModelConfig sdxl_turbo_params;
 
 void help(char* cmd)
 {
@@ -92,69 +38,6 @@ void help(char* cmd)
     exit(1);
 }
 
-int text2image(ModelParams params)
-{
-    printf("Creating image from text ...\n");
-
-    params.height -= params.height % 64;
-    params.width -= params.width % 64;
-
-    print_params(params);
-
-
-    // GGMLModel model;
-    // model.preload(params.model_path);
-    // model.remap("first_stage_model.", "vae.");
-    // model.remap("model.diffusion_model.", "unet.");
-    // model.remap(".transformer_blocks.", ".transformer.");
-    // model.remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
-    // model.remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
-
-    // model.dump();
-
-
-    // // AutoEncoderKL net;
-    // UNetModel net;
-    // // TextEncoder net;
-
-    // // // net.set_device(params.device);
-    // // // // net.load(params.model_path, "first_stage_model.");
-    // // // // net.load(params.model_path, "model.diffusion_model.");
-    // // // net.load(params.model_path, "cond_stage_model.");
-
-    // net.set_device(1);
-    // net.start_engine();
-    // // net.dump();
-
-    // net.load_weight(&model, "unet.");
-    // // net.load_weight(&model, "vae.");
-    // // net.load_weight(&model, "clip.");
-
-    // net.stop_engine();
-
-
-    // model.clear();
-
-    // // Denoiser denoiser;
-    // // denoiser.init();
-    // // denoiser.dump();
-
-    CheckPoint("OK !");
-
-    return 0;
-}
-
-int image2image(ModelParams params)
-{
-    printf("Creating image from image ...\n");
-
-    params.height -= params.height % 64;
-    params.width -= params.width % 64;
-
-    print_params(params);
-
-    return 0;
-}
 
 
 int main(int argc, char** argv)
@@ -256,7 +139,6 @@ int main(int argc, char** argv)
     if (strlen(sdxl_turbo_params.positive) > 0) {
         return text2image(sdxl_turbo_params);
     }
-    closelog();    
 
     // Without input image and positive prompt
     help(argv[0]);

@@ -42,6 +42,8 @@ Header only file for ggml engine
 #include "ggml-metal.h"
 #endif
 
+#include "ggml_nn.h"
+
 #define ENGINE_VERSION "1.0.0"
 #define MAX_INPUT_TENSORS 8
 #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)

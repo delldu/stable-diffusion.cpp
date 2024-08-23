@@ -9,10 +9,13 @@
 #
 
 TARGET := sdxl_turbo
-SOURCE := main.cpp
+SOURCE := \
+	src/clip.cpp src/denoiser.cpp src/unet.cpp src/vae.cpp src/sdxl.cpp \
+	main.cpp
 
 
 INCS := -I../ggml/include/ggml/ -I../ggml/src/ \
+		-Iinclude -Isrc \
 		$(shell pkg-config nimage --cflags) \
 # 		$(shell pkg-config ggml --cflags)
 

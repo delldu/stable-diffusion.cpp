@@ -13,32 +13,18 @@
 
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 
-struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tensor* x)
-{
-    return ggml_dup_inplace(ctx, x);
-}
-
+struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tensor* x);
 struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w,
-    struct ggml_tensor* b, int s0 = 1, int s1 = 1, int p0 = 0, int p1 = 0, int d0 = 1, int d1 = 1)
-{
-    x = ggml_conv_2d(ctx, w, x, s0, s1, p0, p1, d0, d1);
+    struct ggml_tensor* b, int s0 = 1, int s1 = 1, int p0 = 0, int p1 = 0, int d0 = 1, int d1 = 1);
+struct ggml_tensor* ggml_nn_layer_norm(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b);
+struct ggml_tensor* ggml_nn_attention(struct ggml_context* ctx, struct ggml_tensor* q, struct ggml_tensor* k, struct ggml_tensor* v, 
+    bool mask = false);
+struct ggml_tensor* ggml_nn_group_norm(
+    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, int num_groups = 32);
+// struct ggml_tensor* ggml_nn_group_norm_32(struct ggml_context* ctx, struct ggml_tensor* a);
+struct ggml_tensor* ggml_nn_linear(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b);
 
-    if (b != NULL) {
-        b = ggml_reshape_4d(ctx, b, 1, 1, b->ne[0], 1);
-        x = ggml_add(ctx, x, b);
-    }
-
-    return x;
-}
-
-struct ggml_tensor* ggml_nn_layer_norm(
-    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b)
-{
-    x = ggml_norm(ctx, x, 1e-6 /*eps*/);
-    x = ggml_mul(ctx, x, w);
-    x = ggml_add(ctx, x, b);
-    return x;
-}
+// ----------------------------------------------------------------------------------------------------------------------------------------
 
 struct LayerNorm {
     int64_t normalized_shape;
@@ -64,34 +50,6 @@ struct LayerNorm {
     }
 };
 
-struct ggml_tensor* ggml_nn_group_norm(
-    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, int num_groups = 32)
-{
-    if (ggml_n_dims(x) >= 3) {
-        w = ggml_reshape_4d(ctx, w, 1, 1, w->ne[0], 1);
-        b = ggml_reshape_4d(ctx, b, 1, 1, b->ne[0], 1);
-    }
-
-    x = ggml_group_norm(ctx, x, num_groups);
-    x = ggml_mul(ctx, x, w);
-    x = ggml_add(ctx, x, b);
-    return x;
-}
-
-// struct ggml_tensor* ggml_nn_group_norm_32(struct ggml_context* ctx, struct ggml_tensor* a)
-// {
-//     return ggml_group_norm(ctx, a, 32);
-// }
-
-struct ggml_tensor* ggml_nn_linear(
-    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b)
-{
-    x = ggml_mul_mat(ctx, w, x);
-    if (b != NULL) {
-        x = ggml_add(ctx, x, b);
-    }
-    return x;
-}
 
 struct Linear {
     int64_t in_features;
@@ -181,7 +139,35 @@ struct GroupNorm32 {
         return ggml_nn_group_norm(ctx, x, weight, bias, 32 /*num_groups*/);
     }
 };
+#endif // _GGML_NN_H_
 
+#ifdef GGML_NN_IMPLEMENTATION
+struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tensor* x)
+{
+    return ggml_dup_inplace(ctx, x);
+}
+
+struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w,
+    struct ggml_tensor* b, int s0 = 1, int s1 = 1, int p0 = 0, int p1 = 0, int d0 = 1, int d1 = 1)
+{
+    x = ggml_conv_2d(ctx, w, x, s0, s1, p0, p1, d0, d1);
+
+    if (b != NULL) {
+        b = ggml_reshape_4d(ctx, b, 1, 1, b->ne[0], 1);
+        x = ggml_add(ctx, x, b);
+    }
+
+    return x;
+}
+
+struct ggml_tensor* ggml_nn_layer_norm(
+    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b)
+{
+    x = ggml_norm(ctx, x, 1e-6 /*eps*/);
+    x = ggml_mul(ctx, x, w);
+    x = ggml_add(ctx, x, b);
+    return x;
+}
 
 // q: [N * n_head, n_token, d_head]
 // k: [N * n_head, n_k, d_head]
@@ -211,4 +197,34 @@ struct ggml_tensor* ggml_nn_attention(
     return kqv;
 }
 
-#endif // _GGML_NN_H_
+struct ggml_tensor* ggml_nn_group_norm(
+    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, int num_groups = 32)
+{
+    if (ggml_n_dims(x) >= 3) {
+        w = ggml_reshape_4d(ctx, w, 1, 1, w->ne[0], 1);
+        b = ggml_reshape_4d(ctx, b, 1, 1, b->ne[0], 1);
+    }
+
+    x = ggml_group_norm(ctx, x, num_groups);
+    x = ggml_mul(ctx, x, w);
+    x = ggml_add(ctx, x, b);
+    return x;
+}
+
+// struct ggml_tensor* ggml_nn_group_norm_32(struct ggml_context* ctx, struct ggml_tensor* a)
+// {
+//     return ggml_group_norm(ctx, a, 32);
+// }
+
+struct ggml_tensor* ggml_nn_linear(
+    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b)
+{
+    x = ggml_mul_mat(ctx, w, x);
+    if (b != NULL) {
+        x = ggml_add(ctx, x, b);
+    }
+    return x;
+}
+
+
+#endif // GGML_NN_IMPLEMENTATION

@@ -1,8 +1,7 @@
-#ifndef __UNET_HPP__
-#define __UNET_HPP__
+#ifndef __UNET_H__
+#define __UNET_H__
 
 #include "ggml_engine.h"
-#include "ggml_nn.h"
 
 #include <utility> // std::pair, std::make_pair
 
@@ -567,14 +566,14 @@ struct ResBlock {
     }
 };
 
-struct ggml_tensor* ggml_nn_timestep_embedding(
-    struct ggml_context* ctx,
-    struct ggml_tensor* timesteps,
-    int dim,
-    int max_period = 10000)
-{
-    return ggml_timestep_embedding(ctx, timesteps, dim, max_period);
-}
+// struct ggml_tensor* ggml_nn_timestep_embedding(
+//     struct ggml_context* ctx,
+//     struct ggml_tensor* timesteps,
+//     int dim,
+//     int max_period = 10000)
+// {
+//     return ggml_timestep_embedding(ctx, timesteps, dim, max_period);
+// }
 
 
 // ldm.modules.diffusionmodules.openaimodel.UNetModel
@@ -1012,7 +1011,7 @@ struct UNetModel : GGMLNetwork {
             y = ggml_repeat(ctx, y, ggml_new_tensor_2d(ctx, GGML_TYPE_F32, y->ne[0], x->ne[3]));
         }
 
-        auto t_emb = ggml_nn_timestep_embedding(ctx, timesteps, model_channels); // [N, model_channels]
+        auto t_emb = ggml_timestep_embedding(ctx, timesteps, model_channels, 10000 /*max_period*/); // [N, model_channels]
 
         auto emb = time_embed_0.forward(ctx, t_emb);
         emb = ggml_silu_inplace(ctx, emb);
@@ -1177,4 +1176,4 @@ struct UNetModel : GGMLNetwork {
     }
 };
 
-#endif // __UNET_HPP__
+#endif // __UNET_H__
