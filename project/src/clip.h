@@ -1,7 +1,15 @@
+/************************************************************************************
+***
+*** Copyright 2024 Dell(18588220928@163.com), All Rights Reserved.
+***
+*** File Author: Dell, Sat 24 Aug 2024 03:22:25 PM CST
+***
+************************************************************************************/
+
 #ifndef __CLIP_H__
 #define __CLIP_H__
 
-#include "ggml_engine.h"
+#include <ggml_engine.h>
 
 #include <codecvt>
 #include <map>
@@ -586,9 +594,11 @@ struct CLIPLayer {
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, bool mask = true)
     {
         // x: [N, n_token, d_model]
+        // f32 [   768,    77,     1,     1], x
         x = ggml_add(ctx, x, self_attn.forward(ctx, layer_norm1.forward(ctx, x), mask));
         x = ggml_add(ctx, x, mlp.forward(ctx, layer_norm2.forward(ctx, x)));
-        return x;
+
+        return x; // f32 [   768,    77,     1,     1], x 
     }
 };
 
@@ -661,15 +671,17 @@ struct CLIPEmbeddings {
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids)
     {
-        // input_ids: [N, n_token]
+        // input_ids //    i32 [    77,     1,     1,     1], net.input_0
         GGML_ASSERT(input_ids->ne[0] == position_embedding_weight->ne[1]);
         input_ids = ggml_reshape_3d(ctx, input_ids, input_ids->ne[0], 1, input_ids->ne[1]);
+        // input_ids = ggml_cast(ctx, input_ids, GGML_TYPE_I32); // force f32 to i32
         auto token_embedding = ggml_get_rows(ctx, token_embedding_weight, input_ids);
         token_embedding = ggml_reshape_3d(ctx, token_embedding, token_embedding->ne[0], token_embedding->ne[1], token_embedding->ne[3]);
 
-        // token_embedding + position_embedding
+        // f32 [   768,    77,     1,     1],  token_embedding
+        // f32 [   768,    77,     1,     1],  position_embedding.weight
         auto x = ggml_add(ctx, token_embedding, position_embedding_weight); // [N, n_token, embed_dim]
-        return x;
+        return x; // f32 [   768,    77,     1,     1], x
     }
 };
 
@@ -734,7 +746,7 @@ struct CLIPTextModel {
         char s[GGML_MAX_NAME];
 
         if (version == OPEN_CLIP_VIT_BIGG_14) {
-            ggml_format_name(text_projection, "%s%s", prefix, "text_projection.");
+            ggml_format_name(text_projection, "%s%s", prefix, "text_projection");
         }
 
         snprintf(s, sizeof(s), "%s%s", prefix, "embeddings.");
@@ -800,10 +812,65 @@ struct TextEncoder : GGMLNetwork {
         text_model2.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids, struct ggml_tensor* input_ids2)
+    size_t get_graph_size()
     {
+        return GGML_DEFAULT_GRAPH_SIZE * 32; // 2048 * 10
+    }
+
+    // inputs must be GGML_TYPE_I32, override !!! 
+    void create_input_tensors(int argc, TENSOR *argv[], struct ggml_context *ctx, struct ggml_tensor *x[])
+    {
+        char input_name[64];
+        for (int i = 0; i < argc; i++) {
+            if (argv[i] == NULL) {
+                x[i] = NULL;
+                continue;
+            }
+
+            snprintf(input_name, sizeof(input_name), "net.input_%d", i);
+            x[i] = ggml_new_tensor_4d(ctx, GGML_TYPE_I32, 
+                (int64_t)argv[i]->width, (int64_t)argv[i]->height, (int64_t)argv[i]->chan, (int64_t)argv[i]->batch);
+            ggml_set_name(x[i], input_name);
+        }
+    }
+
+    // inputs must be GGML_TYPE_I32, override !!! 
+    void setup_input_values(int argc, TENSOR *argv[], bool is_cpu_backend, struct ggml_tensor *x[])
+    {
+        std::vector<int> temp;
+
+        if (is_cpu_backend) {
+            syslog_debug("Set input values to cpu backend ...");
+        } else {
+            syslog_debug("Set input values to cuda backend ...");
+        }
+
+        for (int i = 0; i < argc; i++) {
+            if (argv[i] == NULL)
+                continue;
+
+            int n = x[i]->ne[0] * x[i]->ne[1] * x[i]->ne[2] * x[i]->ne[3];
+            temp.reserve(n);
+            for (int j = 0; j < n; j++) {
+                temp[j] = (int)argv[i]->data[j]; // force float to int32
+            }
+
+            if (is_cpu_backend) {
+                memcpy(x[i]->data, temp.data(), ggml_nbytes(x[i]));
+            } else {
+                ggml_backend_tensor_set(x[i], temp.data(), 0, ggml_nbytes(x[i]));
+            }
+        }
+    }
+
+    struct ggml_tensor* forward(struct ggml_context* ctx, int argc, struct ggml_tensor* argv[2])
+    {
+        struct ggml_tensor* input_ids = argv[0];  // i32 [    77,     1,     1,     1], net.input_0
+        struct ggml_tensor* input_ids2 = argv[1]; // i32 [    77,     1,     1,     1], net.input_1
+
         size_t N = input_ids->ne[1];
         size_t n_token = input_ids->ne[0];
+
         if (input_ids != NULL && input_ids->ne[0] > text_model.n_token) {
             GGML_ASSERT(input_ids->ne[0] % text_model.n_token == 0);
             input_ids = ggml_reshape_2d(ctx, input_ids, text_model.n_token, input_ids->ne[0] / text_model.n_token);
@@ -817,7 +884,7 @@ struct TextEncoder : GGMLNetwork {
             return text_model2.forward(ctx, input_ids2, max_token_idx, return_pooled);
         }
 
-        auto hidden_states = text_model.forward(ctx, input_ids); // [N, n_token, hidden_size]
+        auto hidden_states = text_model.forward(ctx, input_ids, max_token_idx, return_pooled); // [N, n_token, hidden_size]
         hidden_states = ggml_reshape_4d(ctx,
             hidden_states,
             hidden_states->ne[0],
@@ -826,20 +893,22 @@ struct TextEncoder : GGMLNetwork {
             hidden_states->ne[3]);
         hidden_states = ggml_cont(ctx, ggml_permute(ctx, hidden_states, 2, 0, 1, 3));
 
-        auto hidden_states2 = text_model2.forward(ctx, input_ids2); // [N, n_token, hidden_size2]
+        auto hidden_states2 = text_model2.forward(ctx, input_ids2, max_token_idx, return_pooled); //  f32 [  1280,    77,     1,     1]
+
         hidden_states2 = ggml_reshape_4d(ctx,
             hidden_states2,
             hidden_states2->ne[0],
             hidden_states2->ne[1],
             hidden_states2->ne[2],
             hidden_states2->ne[3]);
-        hidden_states2 = ggml_cont(ctx, ggml_permute(ctx, hidden_states2, 2, 0, 1, 3));
 
+        hidden_states2 = ggml_cont(ctx, ggml_permute(ctx, hidden_states2, 2, 0, 1, 3));
         hidden_states = ggml_concat(ctx, hidden_states, hidden_states2, 2); // [N, n_token, hidden_size + hidden_size2]
 
         hidden_states = ggml_cont(ctx, ggml_permute(ctx, hidden_states, 1, 2, 0, 3));
         hidden_states = ggml_reshape_3d(ctx, hidden_states, hidden_states->ne[0], n_token, N);
-        return hidden_states;
+
+        return hidden_states; // f32 [  2048,    77,     1,     1],  (permuted) (cont) (reshaped)
     }
 
     void pad_tokens(std::vector<int>& tokens, std::vector<float>& weights, bool padding = false)
@@ -847,9 +916,7 @@ struct TextEncoder : GGMLNetwork {
         if (!padding)
             return;
 
-        size_t max_length = text_model.n_token;
-        // CheckPoint("text_model.n_token = %ld", text_model.n_token); // text_model.n_token = 77
-
+        size_t max_length = text_model.n_token; // text_model.n_token = 77
         size_t n = std::ceil(tokens.size() * 1.0 / (max_length - 2));
         if (n == 0) {
             n = 1;
@@ -913,9 +980,6 @@ struct TextEncoder : GGMLNetwork {
     }
 };
 
-
-std::vector<float> timestep_embedding(int height, int width, int dim);
-TENSOR *get_clip_pooled(TENSOR *pooled, int height, int width, int dim);
 std::vector<TENSOR *> clip_encode(TextEncoder *clip, char *text, int height, int width);
 
 #endif // __CLIP_H__

@@ -12,6 +12,7 @@
 display /tmp/output1.png
 
 PROMPT="interior design of a luxurious master bedroom, gold and marble furniture, luxury, intricate, breathtaking"
+NEGATIVE="black and white"
 ./build/bin/sd --mode txt2img --model models/sdxl_turbo_q8_0.gguf \
 	--height 768 --width 512 \
 	--prompt "'$PROMPT'" \

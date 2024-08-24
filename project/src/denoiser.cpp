@@ -1,3 +1,11 @@
+/************************************************************************************
+***
+*** Copyright 2024 Dell(18588220928@163.com), All Rights Reserved.
+***
+*** File Author: Dell, Sat 24 Aug 2024 03:22:25 PM CST
+***
+************************************************************************************/
+
 #include "denoiser.h"
 
 void calculate_alphas_cumprod(float* alphas_cumprod)

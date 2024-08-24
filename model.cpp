@@ -1457,12 +1457,6 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb, ggml_backend
                 continue;
             }
 
-            // ggml_tensor_dump(dst_tensor);
-            // CheckPoint("tensor_storage: %s: %s, %ld [%ld, %ld, %ld, %ld]", 
-            //     tensor_storage.name.c_str(), ggml_type_name(tensor_storage.type), tensor_storage.n_dims, 
-            //     tensor_storage.ne[0], tensor_storage.ne[1], tensor_storage.ne[2], tensor_storage.ne[3]);
-            // CheckPoint("--------------------------------------------");
-
             size_t nbytes_to_read = tensor_storage.nbytes_to_read();
 
             if (dst_tensor->buffer == NULL || ggml_backend_buffer_is_host(dst_tensor->buffer)) {

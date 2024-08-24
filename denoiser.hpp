@@ -123,7 +123,7 @@ struct Denoiser {
 
 
 
-typedef std::function<ggml_tensor*(ggml_tensor*, float, int)> denoiser_cb_t;
+typedef std::function<ggml_tensor *(ggml_tensor*, float, int)> denoiser_cb_t;
 
 // k diffusion reverse ODE: dx = (x - D(x;\sigma)) / \sigma dt; \sigma(t) = 
 // xxxx_1111

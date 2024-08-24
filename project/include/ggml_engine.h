@@ -45,7 +45,7 @@ Header only file for ggml engine
 #include "ggml_nn.h"
 
 #define ENGINE_VERSION "1.0.0"
-#define MAX_INPUT_TENSORS 8
+#define MAX_INPUT_TENSORS 16
 #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
 // GGML Engine
@@ -111,6 +111,42 @@ public:
     virtual size_t get_graph_size()
     {
         return GGML_DEFAULT_GRAPH_SIZE; // 2048
+    }
+
+    virtual void create_input_tensors(int argc, TENSOR *argv[], struct ggml_context *ctx, struct ggml_tensor *x[])
+    {
+        char input_name[64];
+        for (int i = 0; i < argc; i++) {
+            if (argv[i] == NULL) {
+                x[i] = NULL;
+                continue;
+            }
+
+            snprintf(input_name, sizeof(input_name), "net.input_%d", i);
+            x[i] = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
+                (int64_t)argv[i]->width, (int64_t)argv[i]->height, (int64_t)argv[i]->chan, (int64_t)argv[i]->batch);
+            ggml_set_name(x[i], input_name);
+        }
+    }
+
+    virtual void setup_input_values(int argc, TENSOR *argv[], bool is_cpu_backend, struct ggml_tensor *x[])
+    {
+        if (is_cpu_backend) {
+            syslog_debug("Set input values to cpu backend ...");
+        } else {
+            syslog_debug("Set input values to cuda backend ...");
+        }
+
+        for (int i = 0; i < argc; i++) {
+            if (argv[i] == NULL)
+                continue;
+
+            if (is_cpu_backend) {
+                memcpy(x[i]->data, argv[i]->data, ggml_nbytes(x[i]));
+            } else {
+                ggml_backend_tensor_set(x[i], argv[i]->data, 0, ggml_nbytes(x[i]));
+            }
+        }
     }
 
 protected:
@@ -458,9 +494,7 @@ struct ggml_cgraph* GGMLNetwork::m_build_graph(int argc, struct ggml_tensor* arg
     struct ggml_tensor* result = this->forward(ctx, argc, argv);
     CHECK_POINT(result != NULL);
 
-    // ggml_set_output(result);
     ggml_build_forward_expand(gf, result);
-    // ggml_graph_compute_with_ctx(ctx, gf, m_ggml_engine.cpu_threads);
 
     // Delete temp context
     ggml_free(ctx);
@@ -515,6 +549,7 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
         // ggml_graph_print(gf);
         struct ggml_tensor* y = gf->nodes[gf->n_nodes - 1];
         CHECK_POINT(y != NULL);
+
         output = get_tensor_value(y, true /*from_backend*/);
 
         // Save output tensors
@@ -526,6 +561,7 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
                 m_ggml_engine.output_tensors[strdup(leaf->name)] = yt;
             }
         }
+
         for (int i = 0; i < gf->n_nodes; i++) {
             struct ggml_tensor* node = gf->nodes[i];
             if (node->flags & GGML_TENSOR_FLAG_OUTPUT) {
@@ -537,6 +573,7 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
     }
 
     ggml_gallocr_free(compute_gallocr);
+
     return output;
 }
 
@@ -578,14 +615,20 @@ TENSOR* GGMLNetwork::engine_forward(int argc, TENSOR* argv[])
             m_ggml_engine.inputs_context = ggml_init(params);
             CHECK_POINT(m_ggml_engine.inputs_context);
 
-            char input_name[64];
-            for (int i = 0; i < argc; i++) {
-                snprintf(input_name, sizeof(input_name), "net.input_%d", i);
-                x[i] = ggml_new_tensor_4d(m_ggml_engine.inputs_context, GGML_TYPE_F32,
-                    (int64_t)argv[i]->width, (int64_t)argv[i]->height,
-                    (int64_t)argv[i]->chan, (int64_t)argv[i]->batch);
-                ggml_set_name(x[i], input_name);
-            }
+            // char input_name[64];
+            // for (int i = 0; i < argc; i++) {
+            //     if (argv[i] == NULL) {
+            //         x[i] = NULL;
+            //         continue;
+            //     }
+
+            //     snprintf(input_name, sizeof(input_name), "net.input_%d", i);
+            //     x[i] = ggml_new_tensor_4d(m_ggml_engine.inputs_context, GGML_TYPE_F32,
+            //         (int64_t)argv[i]->width, (int64_t)argv[i]->height,
+            //         (int64_t)argv[i]->chan, (int64_t)argv[i]->batch);
+            //     ggml_set_name(x[i], input_name);
+            // }
+            create_input_tensors(argc, argv, m_ggml_engine.inputs_context, x);
 
             // Backend ...
             if (m_ggml_engine.inputs_backend_buffer != NULL)
@@ -599,19 +642,17 @@ TENSOR* GGMLNetwork::engine_forward(int argc, TENSOR* argv[])
         }
 
         bool cpu_backend = _backend_is_cpu(m_ggml_engine.backend);
-        if (cpu_backend) {
-            syslog_debug("Set input data to cpu backend ...");
-        } else {
-            syslog_debug("Set input data to cuda backend ...");
-        }
+        // for (int i = 0; i < argc; i++) {
+        //     if (argv[i] == NULL)
+        //         continue;
 
-        for (int i = 0; i < argc; i++) {
-            if (cpu_backend) {
-                memcpy(x[i]->data, argv[i]->data, ggml_nbytes(x[i]));
-            } else {
-                ggml_backend_tensor_set(x[i], argv[i]->data, 0, ggml_nbytes(x[i]));
-            }
-        }
+        //     if (cpu_backend) {
+        //         memcpy(x[i]->data, argv[i]->data, ggml_nbytes(x[i]));
+        //     } else {
+        //         ggml_backend_tensor_set(x[i], argv[i]->data, 0, ggml_nbytes(x[i]));
+        //     }
+        // }
+        setup_input_values(argc, argv, cpu_backend, x);
     }
 
     // Compute ...

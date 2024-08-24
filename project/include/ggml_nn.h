@@ -63,7 +63,7 @@ struct Linear {
     {
         weight = ggml_new_tensor_2d(ctx, wtype, in_features, out_features);
         if (has_bias) {
-            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_F16) ? GGML_TYPE_F32 : GGML_TYPE_F16, out_features);
+            bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_features);
         }
     }
 
@@ -97,7 +97,7 @@ struct Conv2d {
     {
         weight = ggml_new_tensor_4d(ctx, wtype, kernel_size.second, kernel_size.first, in_channels, out_channels);
         if (has_bias) {
-            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_F16) ? GGML_TYPE_F32 : GGML_TYPE_F16, out_channels);
+            bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
         }
     }
 
@@ -125,7 +125,7 @@ struct GroupNorm32 {
     {
         // norm use GGML_TYPE_F32 !!!
         weight = ggml_new_tensor_1d(ctx, wtype, num_channels);
-        bias = ggml_new_tensor_1d(ctx, wtype, num_channels);
+        bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, num_channels);
     }
 
     void setup_weight_names(const char* prefix)

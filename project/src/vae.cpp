@@ -1,3 +1,11 @@
+/************************************************************************************
+***
+*** Copyright 2024 Dell(18588220928@163.com), All Rights Reserved.
+***
+*** File Author: Dell, Sat 24 Aug 2024 03:22:25 PM CST
+***
+************************************************************************************/
+
 #include "vae.h"
 
 TENSOR *vae_encode(AutoEncoderKL *vae, TENSOR *image)

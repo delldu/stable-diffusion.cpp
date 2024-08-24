@@ -343,7 +343,6 @@ public:
         auto tokens_and_weights = cond_stage_model->tokenize(text, true);
         std::vector<int>& tokens = tokens_and_weights.first;
         std::vector<float>& weights = tokens_and_weights.second;
-        // CheckPoint("tokens.size() = %ld, weights.size() = %ld, s = [%s]", tokens.size(), weights.size(), text.c_str());
         // tokens.size() = 77, weights.size() = 77, s = [4 guys standing in back of sea, sunset, four person face to camera !!!]
         // tokens.size() = 77, weights.size() = 77, s = [black and white]
 
@@ -357,7 +356,6 @@ public:
         size_t chunk_len   = 77;
         size_t chunk_count = tokens.size() / chunk_len;
 
-        // CheckPoint("text = %s, chunk_count = %ld", text.c_str(), chunk_count);
         for (int i = 0; i < chunk_count; i++) {
             std::vector<int> chunk_tokens(tokens.begin() + i * chunk_len, tokens.begin() + (i + 1) * chunk_len);
             std::vector<float> chunk_weights(weights.begin() + i * chunk_len, weights.begin() + (i + 1) * chunk_len);
@@ -378,15 +376,12 @@ public:
                 input_bigg_14 = vector_to_ggml_tensor_i32(work_ctx, chunk_tokens); // OPEN_CLIP_VIT_BIGG_14 ...
                 //    i32 [    77,     1,     1,     1], 
             }
-            // CheckPoint("max_token_idx = %ld", max_token_idx);
-            // ggml_tensor_dump(input_large_14);
-            // ggml_tensor_dump(input_bigg_14);
             // max_token_idx = 17
-            //    i32 [    77,     1,     1,     1], 
-            //    i32 [    77,     1,     1,     1], 
+            //    i32 [    77,     1,     1,     1], input_large_14
+            //    i32 [    77,     1,     1,     1], input_bigg_14
             // max_token_idx = 4
-            // i32 [    77,     1,     1,     1], 
-            // i32 [    77,     1,     1,     1], 
+            // i32 [    77,     1,     1,     1], input_large_14
+            // i32 [    77,     1,     1,     1], input_bigg_14
 
             // xxxx_debug vae->clip encoder ...
             cond_stage_model->compute(n_threads, input_large_14, input_bigg_14, max_token_idx, false, &chunk_hidden_states, work_ctx);
@@ -394,8 +389,10 @@ public:
             // f32 [  2048,    77,     1,     1], 
 
             if (version == VERSION_XL && i == 0) {
+                // return_pooled == true
                 cond_stage_model->compute(n_threads, input_large_14, input_bigg_14, max_token_idx, true, &pooled, work_ctx);
-                // ggml_tensor_dump(pooled);
+                CheckPoint("=====> pooled");
+                ggml_tensor_dump(pooled);
                 // f32 [  1280,     1,     1,     1], 
             }
 
@@ -409,19 +406,11 @@ public:
                     for (int i1 = 0; i1 < chunk_hidden_states->ne[1]; i1++) {
                         for (int i0 = 0; i0 < chunk_hidden_states->ne[0]; i0++) {
                             float value = ggml_tensor_get_f32(chunk_hidden_states, i0, i1, i2);
-                            value *= chunk_weights[i1];
+                            value *= chunk_weights[i1]; // chunk_weights[i] === 1.0
                             ggml_tensor_set_f32(result, value, i0, i1, i2);
                         }
                     }
                 }
-                // float new_mean = ggml_tensor_mean(result);
-
-                // CheckPoint("original_mean = %.4f, new_mean = %.4f", original_mean, new_mean);
-                // original_mean = 0.0237, new_mean = 0.0237
-                // ggml_tensor_scale(result, (original_mean / new_mean));
-                // ggml_tensor_dump(result);
-                // f32 [  2048,    77,     1,     1], 
-
             }
             hidden_states_vec.insert(hidden_states_vec.end(), (float*)result->data, ((float*)result->data) + ggml_nelements(result));
         }
@@ -440,8 +429,8 @@ public:
         if (version == VERSION_XL) { // xxxx_debug
             int out_dim = 256;
             vec = ggml_new_tensor_1d(work_ctx, GGML_TYPE_F32, diffusion_model->unet.adm_in_channels); // 2816
-            // CheckPoint("vec");
-            // ggml_tensor_dump(vec);
+            CheckPoint("vec");
+            ggml_tensor_dump(vec);
             // vec
             //    f32 [  2816,     1,     1,     1], 
 
@@ -509,7 +498,7 @@ public:
         // CheckPoint("sample: control_strength = %.4f, config_scale = %.4f, sigmas.size() = %ld", control_strength, config_scale, sigmas.size());
         // sample: control_strength = 0.9000, config_scale = 1.8000, sigmas.size() = 2
 
-        // ggml_tensor_dump(x_t);
+        // ggml_tensor_dump(x);
         // ggml_tensor_dump(noise);
         // ggml_tensor_dump(positive_latent);
         // ggml_tensor_dump(positive_pooled);
@@ -519,7 +508,7 @@ public:
 
         // for image to image
         // sample: control_strength = 0.9000, config_scale = 1.8000, sigmas.size() = 2
-        // f32 [   128,   128,     4,     1],  x_t
+        // f32 [   128,   128,     4,     1],  x
         // f32 [   128,   128,     4,     1],  noise
         // f32 [  2048,    77,     1,     1],  (reshaped) positive_latent
         // f32 [  2816,     1,     1,     1],  positive_pooled
@@ -540,18 +529,8 @@ public:
 
 
         size_t steps = sigmas.size() - 1;
-        // x_t = load_tensor_from_file(work_ctx, "./rand0.bin");
-        // print_ggml_tensor(x_t);
-#if 0        
-        struct ggml_tensor* x = ggml_dup_tensor(work_ctx, x_t);
-        copy_ggml_tensor(x, x_t); // x = x_t !!!
-
-        struct ggml_tensor* noised_input = ggml_dup_tensor(work_ctx, x_t);
-        // =====================> x, sigmas, rng <=====================
-#else
         struct ggml_tensor* noised_input = ggml_dup_tensor(work_ctx, x);
         // =====================> x, sigmas, rng <=====================
-#endif
 
         // denoise wrapper
         struct ggml_tensor* out_cond   = ggml_dup_tensor(work_ctx, x);
@@ -559,7 +538,7 @@ public:
         struct ggml_tensor* denoised = ggml_dup_tensor(work_ctx, x);
 #if 1
         // xxxx_9999
-        auto denoise = [&](ggml_tensor* input, float sigma, int step) -> ggml_tensor* {
+        auto denoise = [&](ggml_tensor* input, float sigma, int step) -> ggml_tensor * {
             // denoiser, unet, control_net 
 
             CheckPoint("denoise: sigma = %.4f, step = %d", sigma, step); 
@@ -640,9 +619,10 @@ public:
                 float* vec_denoised  = (float*)denoised->data;
                 float* vec_input     = (float*)input->data;
                 float* positive_data = (float*)out_cond->data;
+                float latent_result; //  = positive_data[i];
+
                 int ne_elements = (int)ggml_nelements(denoised);
                 for (int i = 0; i < ne_elements; i++) {
-                    float latent_result = positive_data[i];
                     latent_result = negative_data[i] + config_scale * (positive_data[i] - negative_data[i]);
                     vec_denoised[i] = latent_result * c_out + vec_input[i] * c_skip; // c_skip == 1.0f
                 }
@@ -885,13 +865,11 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
         LOG_INFO("generating image: %i/%i - seed %" PRId64, b + 1, batch_count, cur_seed);
 
         sd_ctx->sd->rng->manual_seed(cur_seed);
-#if 1        
-        struct ggml_tensor* x = NULL;
-        struct ggml_tensor* noise = NULL;
 
+        struct ggml_tensor* x = NULL;
         // x = image_latent + sigmas[0]*noise
         {
-            noise = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
+            struct ggml_tensor* noise = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
             ggml_tensor_set_f32_randn(noise, sd_ctx->sd->rng);
             ggml_tensor_scale(noise, sigmas[0]);
 
@@ -901,7 +879,6 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
             }
             ggml_tensor_add(x, noise);
         }
-#endif
 
         // xxxx_debug !!!
         struct ggml_tensor* x_0 = sd_ctx->sd->one_batch_sample(work_ctx,
@@ -1087,20 +1064,12 @@ sd_image_t* img2img(sd_ctx_t* sd_ctx,
     std::vector<float> sigmas = sd_ctx->sd->denoiser->get_sigmas(sample_steps);
 
     size_t t_enc = static_cast<size_t>(sample_steps * strength);
+    if (t_enc >= sample_steps)
+        t_enc = sample_steps - 1;
+
     LOG_INFO("target t_enc is %zu steps", t_enc);
     std::vector<float> sigma_sched;
     sigma_sched.assign(sigmas.begin() + sample_steps - t_enc - 1, sigmas.end());
-    // CheckPoint("sample_steps = %d, strength = %.4f, t_enc = %ld", sample_steps, strength, t_enc);
-    // printf("sigmas: ");
-    // for (size_t i = 0; i < sigmas.size(); i++) {
-    //     printf("%.4f ", sigmas[i]);
-    // }
-    // printf("\n");
-    // printf("sigma_sched: ");
-    // for (size_t i = 0; i < sigma_sched.size(); i++) {
-    //     printf("%.4f ", sigma_sched[i]);
-    // }
-    // printf("\n");
     // sample_steps = 5, strength = 0.1500, t_enc = 0
     // sigmas: 14.6147 4.0861 1.6156 0.6951 0.0292 0.0000 
     // sigma_sched: 0.0292 0.0000 

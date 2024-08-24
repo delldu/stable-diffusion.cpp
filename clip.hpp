@@ -501,12 +501,12 @@ public:
           num_positions(num_positions) {
     }
 
-
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* input_ids) {
         // input_ids: [N, n_token]
-        auto token_embed_weight    = params["token_embedding.weight"];
-        auto position_embed_weight = params["position_embedding.weight"];
+        auto token_embed_weight    = params["token_embedding.weight"]; //   q8_0 [  1280, 49408,     1,     1], leaf_179
+        auto position_embed_weight = params["position_embedding.weight"]; // f32 [  1280,    77,     1,     1], leaf_181
 
+        // ggml_tensor_dump(input_ids); //    i32 [    77,     1,     1,     1], 
         GGML_ASSERT(input_ids->ne[0] == position_embed_weight->ne[1]);
         input_ids            = ggml_reshape_3d(ctx, input_ids, input_ids->ne[0], 1, input_ids->ne[1]);
         auto token_embedding = ggml_get_rows(ctx, token_embed_weight, input_ids);
@@ -604,16 +604,16 @@ public:
 
         auto x = embeddings->forward(ctx, input_ids);  // [N, n_token, hidden_size], xxxx_debug
         // x      = encoder->forward(ctx, x, return_pooled ? -1 : clip_skip, true);
-        x      = encoder->forward(ctx, x, return_pooled ? -1 : clip_skip);
+        x = encoder->forward(ctx, x, return_pooled ? -1 : clip_skip);
 
         if (return_pooled || with_final_ln) {
             x = final_layer_norm->forward(ctx, x);
         }
 
         if (return_pooled) {
-            auto text_projection = params["text_projection"];
+            auto text_projection = params["text_projection"]; // OPEN_CLIP_VIT_BIGG_14 ???
             ggml_tensor* pooled  = ggml_view_1d(ctx, x, hidden_size, x->nb[1] * max_token_idx);
-            pooled               = ggml_mul_mat(ctx, ggml_cont(ctx, ggml_transpose(ctx, text_projection)), pooled);
+            pooled = ggml_mul_mat(ctx, ggml_cont(ctx, ggml_transpose(ctx, text_projection)), pooled);
             return pooled;
         }
 

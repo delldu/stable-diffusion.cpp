@@ -1,3 +1,11 @@
+/************************************************************************************
+***
+*** Copyright 2024 Dell(18588220928@163.com), All Rights Reserved.
+***
+*** File Author: Dell, Sat 24 Aug 2024 03:22:25 PM CST
+***
+************************************************************************************/
+
 #include "sdxl.h"
 
 #include <tensor.h>
@@ -67,7 +75,7 @@ int text2image(ModelConfig params)
 
     denoiser.init();
 
-    clip.set_device(params.device);
+    clip.set_device(0); // params.device);
     clip.start_engine();
     clip.load_weight(model, "clip.");
 
@@ -94,24 +102,24 @@ int text2image(ModelConfig params)
     CheckPoint("OK !");
 
 
-    vae.set_device(params.device);
-    vae.start_engine();
-    vae.load_weight(model, "vae.");
+    // vae.set_device(params.device);
+    // vae.start_engine();
+    // vae.load_weight(model, "vae.");
 
-    vae.stop_engine();
+    // vae.stop_engine();
 
-    CheckPoint("OK !");
-
-
-    unet.set_device(params.device);
-    unet.start_engine();
-    unet.load_weight(model, "unet.");
-
-    unet.stop_engine();
-    CheckPoint("OK !");
+    // CheckPoint("OK !");
 
 
-    model->clear();
+    // unet.set_device(params.device);
+    // unet.start_engine();
+    // unet.load_weight(model, "unet.");
+
+    // unet.stop_engine();
+    // CheckPoint("OK !");
+
+
+    // model->clear();
 
 
 
