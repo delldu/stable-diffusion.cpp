@@ -75,40 +75,56 @@ int text2image(ModelConfig params)
 
     denoiser.init();
 
-    clip.set_device(0); // params.device);
-    clip.start_engine();
-    clip.load_weight(model, "clip.");
+    // clip.set_device(params.device);
+    // clip.start_engine();
+    // clip.load_weight(model, "clip.");
 
-    std::vector<TENSOR *> positive_latent_pooled = clip_encode(&clip, params.positive, params.height, params.width);
-    check_point(positive_latent_pooled.size() == 2);
-    TENSOR *positive_latent = positive_latent_pooled[0];
-    TENSOR *positive_pooled = positive_latent_pooled[1];
-    check_point(positive_latent);
-    check_point(positive_pooled);
-    tensor_show((char *)"positive_latent", positive_latent);
-    tensor_show((char *)"positive_pooled", positive_pooled);
-
-
-    std::vector<TENSOR *> negative_latent_pooled = clip_encode(&clip, params.negative, params.height, params.width);
-    check_point(negative_latent_pooled.size() == 2);
-    TENSOR *negative_latent = negative_latent_pooled[0];
-    TENSOR *negative_pooled = negative_latent_pooled[1];
-    check_point(negative_latent);
-    check_point(negative_pooled);
-    tensor_show((char *)"negative_latent", negative_latent);
-    tensor_show((char *)"negative_pooled", negative_pooled);
-
-    clip.stop_engine();
-    CheckPoint("OK !");
+    // std::vector<TENSOR *> positive_latent_pooled = clip_encode(&clip, params.positive, params.height, params.width);
+    // check_point(positive_latent_pooled.size() == 2);
+    // TENSOR *positive_latent = positive_latent_pooled[0];
+    // TENSOR *positive_pooled = positive_latent_pooled[1];
+    // check_point(positive_latent);
+    // check_point(positive_pooled);
+    // tensor_show((char *)"positive_latent", positive_latent);
+    // tensor_show((char *)"positive_pooled", positive_pooled);
 
 
-    // vae.set_device(params.device);
-    // vae.start_engine();
-    // vae.load_weight(model, "vae.");
+    // std::vector<TENSOR *> negative_latent_pooled = clip_encode(&clip, params.negative, params.height, params.width);
+    // check_point(negative_latent_pooled.size() == 2);
+    // TENSOR *negative_latent = negative_latent_pooled[0];
+    // TENSOR *negative_pooled = negative_latent_pooled[1];
+    // check_point(negative_latent);
+    // check_point(negative_pooled);
+    // tensor_show((char *)"negative_latent", negative_latent);
+    // tensor_show((char *)"negative_pooled", negative_pooled);
 
-    // vae.stop_engine();
-
+    // clip.stop_engine();
     // CheckPoint("OK !");
+
+
+    vae.set_device(params.device);
+    vae.start_engine();
+    vae.load_weight(model, "vae.");
+
+    TENSOR *x = tensor_load_image("../images/4guys.png", 0 /*with alpha */);
+    check_point(x);
+    tensor_show("x", x);
+
+    TENSOR *z = vae_encode(&vae, x);
+    check_tensor(z);
+    tensor_show("z", z);
+
+    TENSOR *y = vae_decode(&vae, z);
+    check_point(y);
+    tensor_show("y", y);
+
+    tensor_saveas_image(y, 0, "/tmp/y.png");
+
+
+
+    vae.stop_engine();
+
+    CheckPoint("OK !");
 
 
     // unet.set_device(params.device);

@@ -49,9 +49,8 @@ static TENSOR *get_clip_pooled(TENSOR *pooled, int height, int width, int dim=25
 
     int n = pooled->batch * pooled->chan * pooled->height * pooled->width;
     int dim2 = 2 * dim;
-    TENSOR *cond_pooled = tensor_create(1, 1, 1, n + 3*dim2); // dim2 === 512
+    TENSOR *cond_pooled = tensor_create(1, 1, 1, n + 3*dim2); // n === 1280, dim2 === 512 ==> 1x1x1x2816
     CHECK_TENSOR(cond_pooled);
-    tensor_show("cond_pooled", cond_pooled);
 
     // Clone pooled ...
     for (int i = 0; i < n; i++) {
@@ -60,7 +59,6 @@ static TENSOR *get_clip_pooled(TENSOR *pooled, int height, int width, int dim=25
 
     // Add timestep embeddings ...
     std::vector<float> e = timestep_embedding(height, width, dim); // 512
-    CheckPoint("e.size() == %ld", e.size());
     for (int i = 0; i < dim2; i++) {
         cond_pooled->data[n + 0*dim2 + i] = e[i];
     }

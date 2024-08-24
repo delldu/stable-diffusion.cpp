@@ -639,7 +639,7 @@ struct AutoEncoderKL : GGMLNetwork {
         }
 
         // decode ...
-        auto z = argv[1];
+        auto z = argv[0];
         auto h = ggml_nn_conv_2d(ctx, z, post_quant_conv_w, post_quant_conv_b, 1, 1, 0, 0, 1, 1); // [N, z_channels, h, w]
         ggml_set_name(h, "bench-start");
 
