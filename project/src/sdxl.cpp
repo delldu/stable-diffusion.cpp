@@ -133,14 +133,17 @@ int image2image(ModelConfig *config)
     UNetModel unet;
      
     syslog_info("Creating image from image ...");
+    config_init(config);
 
     TENSOR *image_tensor = tensor_load_image(config->input_image, 0 /*with alpha */);
     check_tensor(image_tensor);
+    if (image_tensor->height != config->height || image_tensor->width != config->width) {
+        TENSOR *t = image_tensor; // save as temp
+        image_tensor = tensor_zoom(t, config->height, config->width);
+        check_tensor(image_tensor);
+        tensor_destroy(t);
+    }
 
-    config->height = image_tensor->height;
-    config->width = image_tensor->width;
-
-    config_init(config);
 
     GGMLModel *model = load_model(config);
     check_point(model != NULL);
