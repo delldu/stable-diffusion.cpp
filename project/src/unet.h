@@ -1181,8 +1181,6 @@ struct UNetModel : GGMLNetwork {
         h = out_2.forward(ctx, h);
         // ggml_set_name(h, "bench-end");
 
-        CheckPoint("unet forward");
-        ggml_tensor_dump(h);
         return h; // [N, out_channels, h, w]
     }
 };

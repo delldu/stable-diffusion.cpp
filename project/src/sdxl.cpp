@@ -17,9 +17,7 @@ struct ControlNet {
     int a = 100; // dummy
 };
 
-typedef std::function<TENSOR *(TENSOR*, float, int)> denoiser_cb_t;
-void k_sample(denoiser_cb_t denoise_model, TENSOR *x, std::vector<float> sigmas, RNG* rng);
-TENSOR *batch_sample(
+static void euler_sample(
     UNetModel *unet,
     TENSOR* x, // image prompt
     TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
@@ -28,91 +26,16 @@ TENSOR *batch_sample(
     float control_strength,
     const std::vector<float>& sigmas,
     RNG *rng, Denoiser *denoiser);
-// ----------------------------------------------------------------------------------------------------------------------------
 
-void k_sample(denoiser_cb_t denoise_model, TENSOR *x, std::vector<float> sigmas, RNG* rng)
-{
-    sample_method_t method = EULER_A;
-    int n = x->batch * x->chan * x->height * x->width;
-
-    size_t steps = sigmas.size() - 1;
-    // sample_euler_ancestral
-    switch (method) {
-    case EULER_A: {
-        TENSOR *noise = tensor_copy(x);
-        TENSOR *d = tensor_copy(x);
-
-        for (int i = 0; i < steps; i++) {
-            float sigma = sigmas[i];
-
-            // denoise
-            TENSOR *noised_output = denoise_model(x, sigma, i + 1); // unet->forward ...
-            check_avoid(noised_output);
-
-            // d = (x - noised_output) / sigma
-            {
-                for (int j = 0; j < n; j++) {
-                    d->data[j] = (x->data[j] - noised_output->data[j]) / sigma; // d = (x - noised_output)/sigma
-                }
-            }
-
-            // get_ancestral_step
-            float sigma_up = std::min(sigmas[i + 1],
-                std::sqrt(sigmas[i + 1] * sigmas[i + 1] * (sigmas[i] * sigmas[i] - sigmas[i + 1] * sigmas[i + 1]) / (sigmas[i] * sigmas[i])));
-            float sigma_down = std::sqrt(sigmas[i + 1] * sigmas[i + 1] - sigma_up * sigma_up);
-
-            // Euler method
-            float dt = sigma_down - sigmas[i];
-            // x = x + d * dt
-            {
-                for (int j = 0; j < n; j++) {
-                    x->data[j] = x->data[j] + d->data[j] * dt;
-                }
-            }
-
-            if (sigmas[i + 1] > 0) { // add noise
-                set_scale_randn(noise, rng, sigma_up);
-                for (int j = 0; j < n; j++) {
-                    x->data[j] = x->data[j] + noise->data[j]; // x = x + sgigma_up * noise
-                }
-            }
-            tensor_destroy(noised_output);
-        } // end of for
-        tensor_destroy(d);
-        tensor_destroy(noise);
-    } break;
-    case EULER: // Implemented without any sigma churn
-    {
-        TENSOR *d = tensor_copy(x);; // d = 0
-
-        for (int i = 0; i < steps; i++) {
-            float sigma = sigmas[i];
-            // denoise
-            TENSOR *noised_output = denoise_model(x, sigma, i + 1);
-            // d = (x - noised_output) / sigma
-            {
-                for (int j = 0; j < n; j++) {
-                    d->data[j] = (x->data[j] - noised_output->data[j]) / sigma; // d = (x - noised_output)/sigma
-                }
-            }
-
-            float dt = sigmas[i + 1] - sigma;
-            // x = x + d * dt
-            {
-                for (int j = 0; j < n; j++) {
-                    x->data[j] = x->data[j] + d->data[j] * dt; // x = x + dt * d
-                }
-            }
-            tensor_destroy(noised_output);
-        } // end of for
-        tensor_destroy(d);
-    } break;
-
-    default:
-        syslog_error("Attempting to sample with nonexisting sample method %i", method);
-        abort();
-    }
-}
+static TENSOR *denoise_model(
+    UNetModel *unet,
+    TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
+    ControlNet *control_net,
+    TENSOR* control_image, // like canny image ...
+    float control_strength,
+    Denoiser *denoiser,
+    TENSOR* input, float sigma, int step);
+// -----------------------------------------------------------------------------------------------------------------------------------------------
 
 
 struct GGMLModel *load_model(ModelConfig *config)
@@ -182,7 +105,6 @@ void config_init(ModelConfig *config)
         config_dump(config);
 }
 
-
 // x = image_latent + sigmas[0]*noise
 TENSOR *config_latent(ModelConfig *config, TENSOR *image_latent)
 {
@@ -204,15 +126,13 @@ TENSOR *config_latent(ModelConfig *config, TENSOR *image_latent)
     return x;
 }
 
-
-
 int image2image(ModelConfig *config)
 {
     TextEncoder clip;
     AutoEncoderKL vae;
     UNetModel unet;
      
-    printf("Creating image from image ...\n");
+    syslog_info("Creating image from image ...");
 
     TENSOR *image_tensor = tensor_load_image(config->input_image, 0 /*with alpha */);
     check_tensor(image_tensor);
@@ -246,7 +166,7 @@ int image2image(ModelConfig *config)
     check_tensor(negative_pooled);
 
     clip.stop_engine();
-    CheckPoint("OK !");
+    syslog_info("clip encode/decode OK.");
 
     vae.set_device(config->device);
     vae.start_engine();
@@ -259,14 +179,13 @@ int image2image(ModelConfig *config)
 
     TENSOR *noised_latent = config_latent(config, image_latent);
     check_tensor(noised_latent);
-    tensor_show((char *)"noised_latent", noised_latent);
 
     // -----------------------------------------------------------------------------------------
     unet.set_device(config->device);
     unet.start_engine();
     unet.load_weight(model, "unet.");
 
-    batch_sample(&unet, 
+    euler_sample(&unet, 
         noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
         NULL /*contrl_net */, 
         NULL /*control_image */,
@@ -274,23 +193,21 @@ int image2image(ModelConfig *config)
         config->sigmas, &(config->rng), &(config->denoiser));
 
     unet.stop_engine();
-    CheckPoint("OK !");
+    syslog_info("unet sample OK !");
     // -----------------------------------------------------------------------------------------
 
     TENSOR *y = vae_decode(&vae, noised_latent);
     check_point(y);
-    tensor_show((char *)"y", y);
     tensor_saveas_image(y, 0, config->output_path);
 
     vae.stop_engine();
     tensor_destroy(y);
     tensor_destroy(image_latent);
-
-    CheckPoint("OK !");
+    syslog_info("vae decode OK !");
 
     model->clear();
 
-    CheckPoint("OK !");
+    syslog_info("Creating image from image OK.");
 
     return RET_OK;
 }
@@ -301,13 +218,12 @@ int text2image(ModelConfig *config)
     AutoEncoderKL vae;
     UNetModel unet;
      
-    printf("Creating image from text ...\n");
+    syslog_info("Creating image from text ...");
 
     config_init(config);
 
     GGMLModel *model = load_model(config);
     check_point(model != NULL);
-
 
     clip.set_device(config->device);
     clip.start_engine();
@@ -329,18 +245,17 @@ int text2image(ModelConfig *config)
     check_tensor(negative_pooled);
 
     clip.stop_engine();
-    CheckPoint("OK !");
+    syslog_info("clip encode/decode OK.");
 
     TENSOR *noised_latent = config_latent(config, NULL);
     check_tensor(noised_latent);
-    tensor_show((char *)"noised_latent", noised_latent);
 
     // -----------------------------------------------------------------------------------------
     unet.set_device(config->device);
     unet.start_engine();
     unet.load_weight(model, "unet.");
 
-    batch_sample(&unet, 
+    euler_sample(&unet, 
         noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
         NULL /*contrl_net */, 
         NULL /*control_image */,
@@ -348,33 +263,31 @@ int text2image(ModelConfig *config)
         config->sigmas, &(config->rng), &(config->denoiser));
 
     unet.stop_engine();
-    CheckPoint("OK !");
+    syslog_info("unet sample OK.");
+
     // -----------------------------------------------------------------------------------------
 
     vae.set_device(config->device);
     vae.start_engine();
     vae.load_weight(model, "vae.");
 
-    tensor_show((char *)"noised_latent", noised_latent);
     TENSOR *y = vae_decode(&vae, noised_latent); 
     tensor_destroy(noised_latent);
     check_tensor(y);
     tensor_saveas_image(y, 0, config->output_path);
-    tensor_show((char *)"y", y);
 
     tensor_destroy(y);
     vae.stop_engine();
-
-    CheckPoint("OK !");
+    syslog_info("vae decode OK.");
 
     model->clear();
 
-    CheckPoint("OK !");
+    syslog_info("Creating image from text OK.");
 
     return RET_OK;
 }
 
-TENSOR *batch_sample(
+static void euler_sample(
     UNetModel *unet,
     TENSOR* x, // image prompt
     TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
@@ -384,133 +297,209 @@ TENSOR *batch_sample(
     const std::vector<float>& sigmas,
     RNG *rng, Denoiser *denoiser)
 {
-    // for image to image
-    // sample: control_strength = 0.9000, config_scale = 1.8000, sigmas.size() = 2
-    // f32 [   128,   128,     4,     1],  x, hxw = 1024x1024
-    // f32 [  2048,    77,     1,     1],  positive_latent
-    // f32 [  2816,     1,     1,     1],  positive_pooled
-    // f32 [  2048,    77,     1,     1],  negative_latent
-    // f32 [  2816,     1,     1,     1],  negative_pooled
-    // tensor == NULL // control_image
-
-    // for text to image
-    // sample: control_strength = 0.9000, config_scale = 1.8000, sigmas.size() = 6
-    //    f32 [    64,    96,     4,     1], x, hxw = 768x512
-    //    f32 [  2048,    77,     1,     1], positive_latent
-    //    f32 [  2816,     1,     1,     1], positive_pooled
-    //    f32 [  2048,    77,     1,     1], negative_latent
-    //    f32 [  2816,     1,     1,     1], negative_pooled
-    // tensor == NULL // control_image
+    sample_method_t method = EULER_A;
+    int n = x->batch * x->chan * x->height * x->width;
 
     size_t steps = sigmas.size() - 1;
+    // sample_euler_ancestral
+    switch (method) {
+    case EULER_A: {
+        TENSOR *d = tensor_copy(x);
 
-    // CheckPoint("steps: %ld", steps);
+        for (int i = 0; i < steps; i++) {
+            syslog_info("Sample progress %d/%ld ...", i, steps);
 
-    TENSOR* noised_input = tensor_copy(x); // place holder for denoise_model ...
+            float sigma = sigmas[i];
+            TENSOR *noised_output = denoise_model(
+                unet,
+                positive_latent, positive_pooled, negative_latent, negative_pooled, config_scale, // text prompt
+                control_net,
+                control_image, // like canny image ...
+                control_strength,
+                denoiser,
+                x, sigma, i + 1 /* step */);
+            check_avoid(noised_output);
+
+            // d = (x - noised_output) / sigma
+            {
+                for (int j = 0; j < n; j++) {
+                    d->data[j] = (x->data[j] - noised_output->data[j]) / sigma; // d = (x - noised_output)/sigma
+                }
+            }
+
+            // get_ancestral_step
+            float sigma_up = std::min(sigmas[i + 1],
+                std::sqrt(sigmas[i + 1] * sigmas[i + 1] * (sigmas[i] * sigmas[i] - sigmas[i + 1] * sigmas[i + 1]) / (sigmas[i] * sigmas[i])));
+            float sigma_down = std::sqrt(sigmas[i + 1] * sigmas[i + 1] - sigma_up * sigma_up);
+
+            // Euler method
+            float dt = sigma_down - sigmas[i];
+            // x = x + d * dt
+            {
+                for (int j = 0; j < n; j++) {
+                    x->data[j] = x->data[j] + d->data[j] * dt;
+                }
+            }
+
+            if (sigmas[i + 1] > 0) { // add noise
+                TENSOR *noise = tensor_copy(x);
+                check_avoid(noise);
+                set_scale_randn(noise, rng, sigma_up);
+                for (int j = 0; j < n; j++) {
+                    x->data[j] = x->data[j] + noise->data[j]; // x = x + sgigma_up * noise
+                }
+                tensor_destroy(noise);
+            }
+            tensor_destroy(noised_output);
+        } // end of for
+        tensor_destroy(d);
+    } break;
+    case EULER: // Implemented without any sigma churn
+    {
+        TENSOR *d = tensor_copy(x);; // d = 0
+
+        for (int i = 0; i < steps; i++) {
+            syslog_info("Sample progress %d/%ld ...", i, steps);
+
+            float sigma = sigmas[i];
+            TENSOR *noised_output = denoise_model(
+                unet,
+                positive_latent, positive_pooled, negative_latent, negative_pooled, config_scale, // text prompt
+                control_net,
+                control_image, // like canny image ...
+                control_strength,
+                denoiser,
+                x, sigma, i + 1 /* step */);
+            check_avoid(noised_output);
+
+            // d = (x - noised_output) / sigma
+            {
+                for (int j = 0; j < n; j++) {
+                    d->data[j] = (x->data[j] - noised_output->data[j]) / sigma; // d = (x - noised_output)/sigma
+                }
+            }
+
+            float dt = sigmas[i + 1] - sigma;
+            // x = x + d * dt
+            {
+                for (int j = 0; j < n; j++) {
+                    x->data[j] = x->data[j] + d->data[j] * dt; // x = x + dt * d
+                }
+            }
+            tensor_destroy(noised_output);
+        } // end of for
+        tensor_destroy(d);
+    } break;
+
+    default:
+        syslog_error("Attempting to sample with nonexisting sample method %i", method);
+        abort();
+    }
+}
+
+static TENSOR *denoise_model(
+    UNetModel *unet,
+    TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
+    ControlNet *control_net,
+    TENSOR* control_image, // like canny image ...
+    float control_strength,
+    Denoiser *denoiser,
+    TENSOR* input, float sigma, int step)
+{
+    // f32 [   128,   128,     4,     1], input
+    int n = input->batch * input->chan * input->height * input->width;
+
+    float c_skip = 1.0f;
+    float c_out = 1.0f;
+    float c_in = 1.0f;
+    std::vector<float> scaling = denoiser->get_scalings(sigma);
+    c_out = scaling[0];
+    c_in  = scaling[1];
+
+    TENSOR *noised_input = tensor_copy(input);
     CHECK_TENSOR(noised_input);
-
-    TENSOR* noised_output = tensor_copy(x);  // place holder for denoise_model ...
-    CHECK_TENSOR(noised_output);
-
+    // noised_input = input * c_in
+    for (int i = 0; i < n; i++) {
+        noised_input->data[i] = input->data[i] * c_in;
+    }
     TENSOR *timesteps = tensor_create(1, 1, 1, 1);
     CHECK_TENSOR(timesteps);
+    timesteps->data[0] = denoiser->sigma_to_t(sigma); // denoiser ???
 
 
-    auto denoise_model = [&](TENSOR* input, float sigma, int step) -> TENSOR * {
-        // f32 [   128,   128,     4,     1], input
-        int ne_elements = input->batch * input->chan * input->height * input->width;
-        syslog_info("Sample progress %d/%ld ...", step, steps);
-        // CheckPoint("sigma = %.4f, step = %d, ne_elements = %d", sigma, step, ne_elements); 
+    TENSOR *noised_output = tensor_copy(input);
+    CHECK_TENSOR(noised_output);
+    // tensor_zero_(noised_output);  // noised_output = 0
 
-        float c_skip = 1.0f;
-        float c_out = 1.0f;
-        float c_in = 1.0f;
-        std::vector<float> scaling = denoiser->get_scalings(sigma);
-        c_out = scaling[0];
-        c_in  = scaling[1];
+    // timesteps -- c_out = -0.0292, c_in = 0.9996
+    // f32 [     1,     1,     1,     1], timesteps
+    // f32 [   128,   128,     4,     1], noised_input
 
-        timesteps->data[0] = denoiser->sigma_to_t(sigma); // denoiser ???
+    std::vector<TENSOR *> controls;
+    // f32 [   128,   128,     4,     1], noised_input
+    // f32 [     1,     1,     1,     1], timesteps
+    // f32 [  2048,    77,     1,     1], positive_latent
+    // f32 [  2816,     1,     1,     1], positive_pooled
 
-        // noised_input = input * c_in
-        for (int i = 0; i < ne_elements; i++) {
-            noised_input->data[i] = input->data[i] * c_in;
+    // cond
+    if (control_net != NULL && control_image != NULL) {
+        TENSOR *argv[] = {noised_input, control_image, timesteps, positive_latent, positive_pooled};
+        // TENSOR *temp = control_net->engine_forward(ARRAY_SIZE(argv), argv);
+        // // controls = control_net->controls;
+        // tensor_destroy(temp);
+    }
+
+    // unet->forward ...
+    // -----------------------------------------------------------------------------------------------------------------
+    // unet->controls = controls;
+    unet->control_strength = control_strength;
+    TENSOR *argv1[] = {noised_input, timesteps, positive_latent, positive_pooled};
+    TENSOR *positive_output = unet->engine_forward(ARRAY_SIZE(argv1), argv1);
+    // TENSOR *positive_output = unet_forward(unet, noised_input, timesteps, positive_latent, positive_pooled, controls, control_strength);
+    CHECK_TENSOR(positive_output);
+    // -----------------------------------------------------------------------------------------------------------------
+
+    // uncond
+    if (control_net != NULL && control_image != NULL) {
+        TENSOR *argv[] = {noised_input, control_image, timesteps, negative_latent, negative_pooled};
+        // TENSOR *temp = control_net->engine_forward(ARRAY_SIZE(argv), argv);
+        // // controls = control_net->controls;
+        // tensor_destroy(temp);
+    }
+
+    // unet->forward ...
+    // -----------------------------------------------------------------------------------------------------------------
+    TENSOR *argv2[] = {noised_input, timesteps, negative_latent, negative_pooled};
+    // unet->controls = controls;
+    unet->control_strength = control_strength;
+    TENSOR *negative_output = unet->engine_forward(ARRAY_SIZE(argv2), argv2);
+    // TENSOR *negative_output = unet_forward(unet, noised_input, timesteps, negative_latent, negative_pooled, controls, control_strength);
+    CHECK_TENSOR(negative_output);
+    // -----------------------------------------------------------------------------------------------------------------
+
+    // update noised_output 
+    {
+        float latent_result;
+        // config_scale -- 0.0 ==> negative
+        // config_scale -- 0.5 ==> (positive + negativee)/2.0
+        // config_scale -- 1.0 ==> positive
+        // config_scale -- 2.0 ==> 2 * positive  - negative ...
+        for (int i = 0; i < n; i++) {
+            latent_result = negative_output->data[i] + config_scale * (positive_output->data[i] - negative_output->data[i]);
+            noised_output->data[i] = latent_result * c_out + input->data[i] * c_skip; // c_skip == 1.0f
         }
-        // timesteps -- c_out = -0.0292, c_in = 0.9996
-        // f32 [     1,     1,     1,     1], timesteps
-        // f32 [   128,   128,     4,     1], noised_input
+    }
 
-        std::vector<TENSOR*> controls;
-        // f32 [   128,   128,     4,     1], noised_input
-        // f32 [     1,     1,     1,     1], timesteps
-        // f32 [  2048,    77,     1,     1], positive_latent
-        // f32 [  2816,     1,     1,     1], positive_pooled
-
-        // cond
-        if (control_net != NULL && control_image != NULL) {
-            TENSOR *argv[] = {noised_input, control_image, timesteps, positive_latent, positive_pooled};
-            // TENSOR *temp = control_net->engine_forward(ARRAY_SIZE(argv), argv);
-            // // controls = control_net->controls;
-            // tensor_destroy(temp);
-        }
-
-        // unet->forward ...
-        // -----------------------------------------------------------------------------------------------------------------
-        // unet->controls = controls;
-        unet->control_strength = control_strength;
-        TENSOR *argv1[] = {noised_input, timesteps, positive_latent, positive_pooled};
-        TENSOR *positive_output = unet->engine_forward(ARRAY_SIZE(argv1), argv1);
-        // TENSOR *positive_output = unet_forward(unet, noised_input, timesteps, positive_latent, positive_pooled, controls, control_strength);
-        CHECK_TENSOR(positive_output);
-        // -----------------------------------------------------------------------------------------------------------------
-        tensor_show("------- positive_output", positive_output);
-
-        // uncond
-        if (control_net != NULL && control_image != NULL) {
-            TENSOR *argv[] = {noised_input, control_image, timesteps, negative_latent, negative_pooled};
-            // TENSOR *temp = control_net->engine_forward(ARRAY_SIZE(argv), argv);
-            // // controls = control_net->controls;
-            // tensor_destroy(temp);
-        }
-
-        // unet->forward ...
-        // -----------------------------------------------------------------------------------------------------------------
-        TENSOR *argv2[] = {noised_input, timesteps, negative_latent, negative_pooled};
-        // unet->controls = controls;
-        unet->control_strength = control_strength;
-        TENSOR *negative_output = unet->engine_forward(ARRAY_SIZE(argv2), argv2);
-        // TENSOR *negative_output = unet_forward(unet, noised_input, timesteps, negative_latent, negative_pooled, controls, control_strength);
-        CHECK_TENSOR(negative_output);
-        tensor_show("------- negative_output", negative_output);
-        // -----------------------------------------------------------------------------------------------------------------
-
-        // update noised_output 
-        {
-            float latent_result;
-            // config_scale -- 0.0 ==> negative
-            // config_scale -- 0.5 ==> (positive + negativee)/2.0
-            // config_scale -- 1.0 ==> positive
-            // config_scale -- 2.0 ==> 2 * positive  - negative ...
-            for (int i = 0; i < ne_elements; i++) {
-                latent_result = negative_output->data[i] + config_scale * (positive_output->data[i] - negative_output->data[i]);
-                noised_output->data[i] = latent_result * c_out + input->data[i] * c_skip; // c_skip == 1.0f
-            }
-        }
-
-        // xxxx_8888
-        tensor_destroy(negative_output);
-        tensor_destroy(positive_output);
-
-        return noised_output;
-    };
-
-    k_sample(denoise_model, x, sigmas, rng); // for (int i = 0; i < steps; i++) ==> update x !!!
-
-    // tensor_destroy(noised_output); // noised_output has been destroy by k_sample ...
+    // xxxx_8888
     tensor_destroy(noised_input);
     tensor_destroy(timesteps);
+    tensor_destroy(negative_output);
+    tensor_destroy(positive_output);
 
-    return x;
+    return noised_output;
 }
+
+
 
 #define GGML_ENGINE_IMPLEMENTATION
 #include <ggml_engine.h>
