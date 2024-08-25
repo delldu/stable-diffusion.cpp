@@ -18,9 +18,10 @@ struct ModelConfig {
     // Input ...
     char *model_path = (char *)"/opt/ai_models/sdxl_turbo_q8_0.gguf"; // sdxl_turbo_q8_0.gguf";
     
-    char *input_image = (char *)"../images/4guys.png"; 
-    char *positive = (char *)"4 guys standing in back of sea, sunset, four person face to camera !!!";
-    char *negative = (char *)"black and white"; // ugly, deformed, noisy, blurry, NSFW";
+    char *input_image = (char *)""; 
+
+    char *positive = (char *)"interior design of a luxurious master bedroom, gold and marble furniture, luxury, intricate, breathtaking";
+    char *negative = (char *)"ugly, deformed, noisy, blurry, NSFW";
     float config_scale   = 1.8f; // CONST !!!
     float noise_strength = 0.15f;
     int sample_steps = 5;
@@ -45,7 +46,7 @@ struct ModelConfig {
 };
 
 void config_init(ModelConfig *config);
-TENSOR *config_noised_latent(ModelConfig *config, TENSOR *image_latent);
+TENSOR *config_latent(ModelConfig *config, TENSOR *image_latent);
 void config_dump(ModelConfig *config);
 
 int text2image(ModelConfig *config);

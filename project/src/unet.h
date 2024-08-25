@@ -646,7 +646,7 @@ struct UNetModel : GGMLNetwork {
 
     size_t get_graph_size()
     {
-        return GGML_DEFAULT_GRAPH_SIZE * 4; // 2048 * 4
+        return GGML_DEFAULT_GRAPH_SIZE * 16; // 2048 * 4
     }
 
     void create_weight_tensors(struct ggml_context* ctx)
