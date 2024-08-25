@@ -23,7 +23,7 @@ struct ModelConfig {
     char *positive = (char *)"interior design of a luxurious master bedroom, gold and marble furniture, luxury, intricate, breathtaking";
     char *negative = (char *)"ugly, deformed, noisy, blurry, NSFW";
     float config_scale   = 1.8f; // CONST !!!
-    float noise_strength = 0.15f;
+    float noise_strength = 0.75f;
     int sample_steps = 5;
     int seed = -1;
 
