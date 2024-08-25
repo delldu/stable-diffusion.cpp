@@ -19,14 +19,10 @@ struct ControlNet {
 
 typedef std::function<TENSOR *(TENSOR*, float, int)> denoiser_cb_t;
 void k_sample(denoiser_cb_t denoise_model, TENSOR *x, std::vector<float> sigmas, RNG* rng);
-TENSOR *one_batch_sample(
+TENSOR *batch_sample(
     UNetModel *unet,
-    TENSOR* x,
-    TENSOR* positive_latent,
-    TENSOR* positive_pooled,
-    TENSOR* negative_latent,
-    TENSOR* negative_pooled,
-    float config_scale,
+    TENSOR* x, // image prompt
+    TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
     ControlNet *control_net,
     TENSOR* control_image, // like canny image ...
     float control_strength,
@@ -171,7 +167,7 @@ void config_init(ModelConfig *config)
     if (strlen(config->input_image) < 1) {
         config->sigmas = sigmas;
     } else {
-        size_t t_enc = static_cast<size_t>(config->sample_steps * config->noise_strength);
+        size_t t_enc = static_cast<size_t>(config->sample_steps * config->noise_strength); // noise strength ...
         if (t_enc >= (size_t)config->sample_steps)
             t_enc = (size_t)config->sample_steps - 1;
 
@@ -216,8 +212,14 @@ int image2image(ModelConfig *config)
     AutoEncoderKL vae;
     UNetModel unet;
      
-
     printf("Creating image from image ...\n");
+
+    TENSOR *image_tensor = tensor_load_image(config->input_image, 0 /*with alpha */);
+    if (tensor_valid(image_tensor)) {
+        config->input_image = (char *)"";
+        config->height = image_tensor->height;
+        config->width = image_tensor->width;
+    }
 
     config_init(config);
 
@@ -236,76 +238,62 @@ int image2image(ModelConfig *config)
     check_point(positive_latent_pooled.size() == 2);
     TENSOR *positive_latent = positive_latent_pooled[0];
     TENSOR *positive_pooled = positive_latent_pooled[1];
-    check_point(positive_latent);
-    check_point(positive_pooled);
+    check_tensor(positive_latent);
+    check_tensor(positive_pooled);
 
 
     std::vector<TENSOR *> negative_latent_pooled = clip_encode(&clip, config->negative, config->height, config->width);
     check_point(negative_latent_pooled.size() == 2);
     TENSOR *negative_latent = negative_latent_pooled[0];
     TENSOR *negative_pooled = negative_latent_pooled[1];
-    check_point(negative_latent);
-    check_point(negative_pooled);
+    check_tensor(negative_latent);
+    check_tensor(negative_pooled);
 
     clip.stop_engine();
     CheckPoint("OK !");
-
-
-
 
     vae.set_device(config->device);
     vae.start_engine();
     vae.load_weight(model, "vae.");
 
-    TENSOR *image_tensor = tensor_load_image(config->input_image, 0 /*with alpha */);
-    check_point(image_tensor);
+    TENSOR *image_latent = NULL;
+    if (tensor_valid(image_tensor)) {
+        image_latent = vae_encode(&vae, image_tensor);
+        check_tensor(image_latent);
 
-    TENSOR *image_latent = vae_encode(&vae, image_tensor);
-    check_tensor(image_latent);
-    tensor_destroy(image_tensor);
+        tensor_destroy(image_tensor);
+    }
 
     TENSOR *noised_image_latent = config_noised_latent(config, image_latent);
-    CHECK_TENSOR(noised_image_latent);
+    check_tensor(noised_image_latent);
 
     // -----------------------------------------------------------------------------------------
     unet.set_device(config->device);
     unet.start_engine();
     unet.load_weight(model, "unet.");
 
-    // TENSOR *one_batch_sample(
-    //     UNetModel *unet,
-    //     TENSOR* x,
-    //     TENSOR* positive_latent,
-    //     TENSOR* positive_pooled,
-    //     TENSOR* negative_latent,
-    //     TENSOR* negative_pooled,
-    //     float config_scale,
-    //     ControlNet *control_net,
-    //     TENSOR* control_image, // like canny image ...
-    //     float control_strength,
-    //     const std::vector<float>& sigmas,
-    //     RNG *rng, Denoiser *denoiser)
-    TENSOR *s0 = one_batch_sample(&unet, 
-        image_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
+    TENSOR *s0 = batch_sample(&unet, 
+        noised_image_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
         NULL /*contrl_net */, 
         NULL /*control_image */,
         config->control_strength,
-        config->sigmas,
-        &(config->rng),
-        &(config->denoiser)
-        );
+        config->sigmas, &(config->rng), &(config->denoiser));
+    check_tensor(s0);
 
     unet.stop_engine();
     CheckPoint("OK !");
     // -----------------------------------------------------------------------------------------
 
     TENSOR *y = vae_decode(&vae, s0); // image_latent);
+    tensor_destroy(s0);
     check_point(y);
-    tensor_saveas_image(y, 0, "/tmp/y.png");
+    tensor_saveas_image(y, 0, config->output_path);
 
     vae.stop_engine();
     tensor_destroy(y);
-    tensor_destroy(image_latent);
+    if (image_latent != NULL) {
+        tensor_destroy(image_latent);
+    }
 
     CheckPoint("OK !");
 
@@ -325,14 +313,10 @@ int text2image(ModelConfig *config)
     return 0;
 }
 
-TENSOR *one_batch_sample(
+TENSOR *batch_sample(
     UNetModel *unet,
-    TENSOR* x,
-    TENSOR* positive_latent,
-    TENSOR* positive_pooled,
-    TENSOR* negative_latent,
-    TENSOR* negative_pooled,
-    float config_scale,
+    TENSOR* x, // image prompt
+    TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
     ControlNet *control_net,
     TENSOR* control_image, // like canny image ...
     float control_strength,

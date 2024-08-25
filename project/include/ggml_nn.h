@@ -63,7 +63,7 @@ struct Linear {
     {
         weight = ggml_new_tensor_2d(ctx, wtype, in_features, out_features);
         if (has_bias) {
-            bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_features);
+            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_Q8_0)? GGML_TYPE_F16 : GGML_TYPE_F32, out_features);
         }
     }
 

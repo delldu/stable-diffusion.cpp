@@ -295,11 +295,11 @@ struct BasicTransformerBlock {
 
         // if (ff_in_flag) {
         //     norm_in.normalized_shape = dim;
-        //     norm_in.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        //     norm_in.create_weight_tensors(ctx, GGML_TYPE_F16);
 
         //     ff_in.dim = dim;
         //     ff_in.dim_out = dim;
-        //     ff_in.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        //     ff_in.create_weight_tensors(ctx, GGML_TYPE_F16);
         // }
     }
 
@@ -419,12 +419,6 @@ struct SpatialTransformer {
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* context)
     {
-        // x: [N, in_channels, h, w]
-        // context: [N, max_position(aka n_token), hidden_size(aka context_dim)]
-        // auto norm     = std::dynamic_pointer_cast<GroupNorm32>(blocks["norm"]);
-        // auto proj_in  = std::dynamic_pointer_cast<Conv2d>(blocks["proj_in"]);
-        // auto proj_out = std::dynamic_pointer_cast<Conv2d>(blocks["proj_out"]);
-
         auto x_in = x;
         int64_t n = x->ne[3];
         int64_t h = x->ne[1];
@@ -438,7 +432,7 @@ struct SpatialTransformer {
         x = ggml_reshape_3d(ctx, x, inner_dim, w * h, n); // [N, h * w, inner_dim]
 
         for (int i = 0; i < depth; i++) {
-            // std::string name       = "transformer." + std::to_string(i);
+            // std::string name = "transformer." + std::to_string(i);
             auto transformer_block = transformer[i]; // std::dynamic_pointer_cast<BasicTransformerBlock>(blocks[name]);
             x = transformer_block.forward(ctx, x, context);
         }

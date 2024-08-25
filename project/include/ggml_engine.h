@@ -614,7 +614,7 @@ TENSOR* GGMLNetwork::engine_forward(int argc, TENSOR* argv[])
             };
             m_ggml_engine.inputs_context = ggml_init(params);
             CHECK_POINT(m_ggml_engine.inputs_context);
-
+            // create_input_tensors template:
             // char input_name[64];
             // for (int i = 0; i < argc; i++) {
             //     if (argv[i] == NULL) {
@@ -642,6 +642,7 @@ TENSOR* GGMLNetwork::engine_forward(int argc, TENSOR* argv[])
         }
 
         bool cpu_backend = _backend_is_cpu(m_ggml_engine.backend);
+        // setup_input_values template:
         // for (int i = 0; i < argc; i++) {
         //     if (argv[i] == NULL)
         //         continue;
