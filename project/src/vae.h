@@ -570,10 +570,10 @@ struct AutoEncoderKL : GGMLNetwork {
     Decoder decoder;
     bool encode_flag = true; /// !!!
 
-    size_t get_graph_size()
-    {
-        return GGML_DEFAULT_GRAPH_SIZE * 10; // 2048 * 10
-    }
+    // size_t get_graph_size()
+    // {
+    //     return GGML_DEFAULT_GRAPH_SIZE * 2; // 2048 * 10
+    // }
 
     AutoEncoderKL()
     {

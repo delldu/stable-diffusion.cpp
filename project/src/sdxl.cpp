@@ -238,8 +238,6 @@ int image2image(ModelConfig *config)
     TENSOR *positive_pooled = positive_latent_pooled[1];
     check_point(positive_latent);
     check_point(positive_pooled);
-    tensor_show((char *)"positive_latent", positive_latent);
-    tensor_show((char *)"positive_pooled", positive_pooled);
 
 
     std::vector<TENSOR *> negative_latent_pooled = clip_encode(&clip, config->negative, config->height, config->width);
@@ -248,8 +246,6 @@ int image2image(ModelConfig *config)
     TENSOR *negative_pooled = negative_latent_pooled[1];
     check_point(negative_latent);
     check_point(negative_pooled);
-    tensor_show((char *)"negative_latent", negative_latent);
-    tensor_show((char *)"negative_pooled", negative_pooled);
 
     clip.stop_engine();
     CheckPoint("OK !");
@@ -263,16 +259,13 @@ int image2image(ModelConfig *config)
 
     TENSOR *image_tensor = tensor_load_image(config->input_image, 0 /*with alpha */);
     check_point(image_tensor);
-    tensor_show("image_tensor", image_tensor);
 
     TENSOR *image_latent = vae_encode(&vae, image_tensor);
     check_tensor(image_latent);
-    tensor_show("image_latent", image_latent);
     tensor_destroy(image_tensor);
 
     TENSOR *noised_image_latent = config_noised_latent(config, image_latent);
     CHECK_TENSOR(noised_image_latent);
-    tensor_show("noised_image_latent", noised_image_latent);
 
     // -----------------------------------------------------------------------------------------
     unet.set_device(config->device);
@@ -308,8 +301,6 @@ int image2image(ModelConfig *config)
 
     TENSOR *y = vae_decode(&vae, s0); // image_latent);
     check_point(y);
-    tensor_show("y", y);
-
     tensor_saveas_image(y, 0, "/tmp/y.png");
 
     vae.stop_engine();
@@ -372,19 +363,15 @@ TENSOR *one_batch_sample(
 
     TENSOR* noised_input = tensor_copy(x); // place holder for denoise_model ...
     CHECK_POINT(noised_input);
-    tensor_show("----------------- place holder noised_input", noised_input);
 
     TENSOR* noised_output = tensor_copy(x);  // place holder for denoise_model ...
     CHECK_TENSOR(noised_output);
-    tensor_show("----------------- place holder noised_output", noised_output);
-
-    CheckPoint("-----------------------");
 
     auto denoise_model = [&](TENSOR* input, float sigma, int step) -> TENSOR * {
         // f32 [   128,   128,     4,     1], input
         int ne_elements = input->batch * input->chan * input->height * input->width;
 
-        CheckPoint("sigma = %.4f, step = %d, ne_elements = %d", sigma, step, ne_elements); 
+        // CheckPoint("sigma = %.4f, step = %d, ne_elements = %d", sigma, step, ne_elements); 
 
         float c_skip = 1.0f;
         float c_out = 1.0f;
@@ -396,8 +383,6 @@ TENSOR *one_batch_sample(
         TENSOR *timesteps = tensor_create(1, 1, 1, 1);
         CHECK_POINT(timesteps);
         timesteps->data[0] = denoiser->sigma_to_t(sigma); // denoiser ???
-        CheckPoint("-----------------------------");
-        tensor_show("----------------- timesteps", timesteps);
 
         // noised_input = input * c_in
         for (int i = 0; i < ne_elements; i++) {
@@ -407,7 +392,6 @@ TENSOR *one_batch_sample(
         // f32 [     1,     1,     1,     1], timesteps
         // f32 [   128,   128,     4,     1], noised_input
 
-        CheckPoint("-----------------------------");
         std::vector<TENSOR*> controls;
         // f32 [   128,   128,     4,     1], noised_input
         // f32 [     1,     1,     1,     1], timesteps
@@ -428,11 +412,9 @@ TENSOR *one_batch_sample(
         // unet->control_strength = control_strength;
         // TENSOR *argv1[] = {noised_input, timesteps, positive_latent, positive_pooled};
         // TENSOR *positive_output = unet->engine_forward(ARRAY_SIZE(argv1), argv1);
-        CheckPoint("-----------------------------");
         TENSOR *positive_output = unet_forward(unet, noised_input, timesteps, positive_latent, positive_pooled, controls, control_strength);
         CHECK_TENSOR(positive_output);
         // -----------------------------------------------------------------------------------------------------------------
-        CheckPoint("-----------------------------");
 
         // uncond
         if (control_net != NULL && control_image != NULL) {
@@ -442,7 +424,6 @@ TENSOR *one_batch_sample(
             // tensor_destroy(temp);
         }
 
-        CheckPoint("-----------------------------");
         // unet->forward ...
         // -----------------------------------------------------------------------------------------------------------------
         // TENSOR *argv2[] = {noised_input, timesteps, negative_latent, negative_pooled};
@@ -453,7 +434,6 @@ TENSOR *one_batch_sample(
         CHECK_TENSOR(negative_output);
         // -----------------------------------------------------------------------------------------------------------------
 
-        CheckPoint("--------------------------");
         // update noised_output 
         {
             float latent_result;
@@ -466,21 +446,15 @@ TENSOR *one_batch_sample(
                 noised_output->data[i] = latent_result * c_out + input->data[i] * c_skip; // c_skip == 1.0f
             }
         }
-        CheckPoint("--------------------------");
 
-        // xxx_debug
         tensor_destroy(negative_output);
         tensor_destroy(positive_output);
         tensor_destroy(timesteps);
 
-        CheckPoint("--------------------------");
         return noised_output;
     };
 
-    CheckPoint("--------------------------");
-
     k_sample(denoise_model, x, sigmas, rng); // for (int i = 0; i < steps; i++) ==> update x !!!
-    CheckPoint("--------------------------");
 
     // tensor_destroy(noised_output); // noised_output has been destroy by k_sample ...
     tensor_destroy(noised_input);

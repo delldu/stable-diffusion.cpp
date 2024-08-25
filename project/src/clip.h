@@ -814,7 +814,7 @@ struct TextEncoder : GGMLNetwork {
 
     // size_t get_graph_size()
     // {
-    //     return GGML_DEFAULT_GRAPH_SIZE * 2; // 2048 * 10
+    //     return GGML_DEFAULT_GRAPH_SIZE * 2; // 2048 * 2
     // }
 
     // inputs must be GGML_TYPE_I32, override !!! 
