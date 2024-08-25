@@ -137,11 +137,11 @@ struct FeedForward {
 
         net_0.dim_in = dim;
         net_0.dim_out = inner_dim;
-        net_0.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        net_0.create_weight_tensors(ctx, GGML_TYPE_F32);
 
         net_2.in_features = inner_dim;
         net_2.out_features = dim_out;
-        net_2.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        net_2.create_weight_tensors(ctx, GGML_TYPE_F32);
     }
 
     void setup_weight_names(const char* prefix)
@@ -285,13 +285,13 @@ struct BasicTransformerBlock {
         attn2.create_weight_tensors(ctx);
 
         norm1.normalized_shape = dim;
-        norm1.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        norm1.create_weight_tensors(ctx);
 
         norm2.normalized_shape = dim;
-        norm2.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        norm2.create_weight_tensors(ctx);
 
         norm3.normalized_shape = dim;
-        norm3.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        norm3.create_weight_tensors(ctx);
 
         // if (ff_in_flag) {
         //     norm_in.normalized_shape = dim;
@@ -652,7 +652,7 @@ struct UNetModel : GGMLNetwork {
 
     size_t get_graph_size()
     {
-        return GGML_DEFAULT_GRAPH_SIZE * 10; // 2048 * 10
+        return GGML_DEFAULT_GRAPH_SIZE * 128; // 2048 * 32
     }
 
     void create_weight_tensors(struct ggml_context* ctx)
@@ -1006,43 +1006,61 @@ struct UNetModel : GGMLNetwork {
         out_2.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx,
-        struct ggml_tensor* x,
-        struct ggml_tensor* timesteps,
-        struct ggml_tensor* context,
-        struct ggml_tensor* y = NULL)
+    struct ggml_tensor* forward(struct ggml_context* ctx, int argc, struct ggml_tensor *argv[])
     {
-        if (context != NULL && context->ne[2] != x->ne[3]) {
-            context = ggml_repeat(ctx, context, ggml_new_tensor_3d(ctx, GGML_TYPE_F32, context->ne[0], context->ne[1], x->ne[3]));
+        CheckPoint("-----------------------------");
+
+        struct ggml_tensor* x = argv[0];
+        struct ggml_tensor* timesteps = argv[1];
+        struct ggml_tensor* cond_latent = argv[2];
+        struct ggml_tensor* cond_pooled = argv[3];
+
+        CheckPoint("-----------------------------");
+
+
+        if (cond_latent != NULL && cond_latent->ne[2] != x->ne[3]) {
+            CheckPoint("-----------------------------");
+            cond_latent = ggml_repeat(ctx, cond_latent, ggml_new_tensor_3d(ctx, GGML_TYPE_F32, cond_latent->ne[0], cond_latent->ne[1], x->ne[3]));
         }
-        if (y != NULL && y->ne[1] != x->ne[3]) {
-            y = ggml_repeat(ctx, y, ggml_new_tensor_2d(ctx, GGML_TYPE_F32, y->ne[0], x->ne[3]));
+        if (cond_pooled != NULL && cond_pooled->ne[1] != x->ne[3]) {
+            CheckPoint("-----------------------------");
+
+            cond_pooled = ggml_repeat(ctx, cond_pooled, ggml_new_tensor_2d(ctx, GGML_TYPE_F32, cond_pooled->ne[0], x->ne[3]));
         }
 
+        CheckPoint("-----------------------------");
+
         auto t_emb = ggml_timestep_embedding(ctx, timesteps, model_channels, 10000 /*max_period*/); // [N, model_channels]
+        CheckPoint("-----------------------------");
 
         auto emb = time_embed_0.forward(ctx, t_emb);
         emb = ggml_silu_inplace(ctx, emb);
         emb = time_embed_2.forward(ctx, emb); // [N, time_embed_dim]
 
-        if (y != NULL) {
-            auto label_emb = label_emb_0_0.forward(ctx, y);
+        CheckPoint("-----------------------------");
+        if (cond_pooled != NULL) {
+            auto label_emb = label_emb_0_0.forward(ctx, cond_pooled);
             label_emb = ggml_silu_inplace(ctx, label_emb);
             label_emb = label_emb_0_2.forward(ctx, label_emb); // [N, time_embed_dim]
             emb = ggml_add(ctx, emb, label_emb); // [N, time_embed_dim]
         }
 
+        CheckPoint("-----------------------------");
         // input_blocks
         std::vector<struct ggml_tensor*> hs;
+        CheckPoint("-----------------------------");
 
         // input block 0
         auto h = input_blocks_0_0.forward(ctx, x);
         // ggml_set_name(h, "bench-start");
         hs.push_back(h);
 
+        CheckPoint("-----------------------------");
+
         // input block 1-11
-        size_t len_mults = channel_mult.size();
+        // size_t len_mults = channel_mult.size();
         // [N, 4*model_channels, h/8, w/8]
+        CheckPoint("-----------------------------");
 
         // i == 0
         h = input_blocks_1_0.forward(ctx, h, emb);
@@ -1052,6 +1070,7 @@ struct UNetModel : GGMLNetwork {
         h = input_blocks_3_0.forward(ctx, h);
         hs.push_back(h);
 
+        CheckPoint("-----------------------------");
         // i == 1
         h = input_blocks_4_0.forward(ctx, h, emb);
         hs.push_back(h);
@@ -1059,24 +1078,31 @@ struct UNetModel : GGMLNetwork {
         hs.push_back(h);
         h = input_blocks_6_0.forward(ctx, h);
         hs.push_back(h);
+        CheckPoint("-----------------------------");
 
         // i == 2
         h = input_blocks_7_0.forward(ctx, h, emb);
-        h = input_blocks_7_1.forward(ctx, h, context);
+        h = input_blocks_7_1.forward(ctx, h, cond_latent);
         hs.push_back(h);
         h = input_blocks_8_0.forward(ctx, h, emb);
-        h = input_blocks_8_1.forward(ctx, h, context);
+        h = input_blocks_8_1.forward(ctx, h, cond_latent);
         hs.push_back(h);
+
+        CheckPoint("-----------------------------");
 
         // middle_block
         h = middle_block_0.forward(ctx, h, emb); // [N, 4*model_channels, h/8, w/8]
-        h = middle_block_1.forward(ctx, h, context); // [N, 4*model_channels, h/8, w/8]
+        h = middle_block_1.forward(ctx, h, cond_latent); // [N, 4*model_channels, h/8, w/8]
         h = middle_block_2.forward(ctx, h, emb); // [N, 4*model_channels, h/8, w/8]
+
+        CheckPoint("-----------------------------");
 
         if (controls.size() > 0) {
             auto cs = ggml_scale_inplace(ctx, controls[controls.size() - 1], control_strength);
             h = ggml_add(ctx, h, cs); // middle control
         }
+        CheckPoint("-----------------------------");
+
         int control_offset = controls.size() - 2;
 
         // output_blocks
@@ -1090,9 +1116,12 @@ struct UNetModel : GGMLNetwork {
         }
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_0_0.forward(ctx, h, emb); // output_blocks_0_0
-        h = output_blocks_0_1.forward(ctx, h, context);
+        h = output_blocks_0_1.forward(ctx, h, cond_latent);
         h_skip = hs.back();
         hs.pop_back();
+
+        CheckPoint("-----------------------------");
+
         if (controls.size() > 0) {
             auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
             h_skip = ggml_add(ctx, h_skip, cs); // control net condition
@@ -1100,9 +1129,12 @@ struct UNetModel : GGMLNetwork {
         }
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_1_0.forward(ctx, h, emb); // output_blocks_1_0
-        h = output_blocks_1_1.forward(ctx, h, context);
+        h = output_blocks_1_1.forward(ctx, h, cond_latent);
         h_skip = hs.back();
         hs.pop_back();
+
+        CheckPoint("-----------------------------");
+
         if (controls.size() > 0) {
             auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
             h_skip = ggml_add(ctx, h_skip, cs); // control net condition
@@ -1110,8 +1142,9 @@ struct UNetModel : GGMLNetwork {
         }
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_2_0.forward(ctx, h, emb); // output_blocks_2_0
-        h = output_blocks_2_1.forward(ctx, h, context);
+        h = output_blocks_2_1.forward(ctx, h, cond_latent);
         h = output_blocks_2_2.forward(ctx, h);
+        CheckPoint("-----------------------------");
 
         // case i == 1
         h_skip = hs.back();
@@ -1121,9 +1154,12 @@ struct UNetModel : GGMLNetwork {
             h_skip = ggml_add(ctx, h_skip, cs); // control net condition
             control_offset--;
         }
+
+        CheckPoint("-----------------------------");
+
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_3_0.forward(ctx, h, emb); // output_blocks_3_0
-        h = output_blocks_3_1.forward(ctx, h, context);
+        h = output_blocks_3_1.forward(ctx, h, cond_latent);
         h_skip = hs.back();
         hs.pop_back();
         if (controls.size() > 0) {
@@ -1133,9 +1169,12 @@ struct UNetModel : GGMLNetwork {
         }
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_4_0.forward(ctx, h, emb); // output_blocks_4_0
-        h = output_blocks_4_1.forward(ctx, h, context);
+        h = output_blocks_4_1.forward(ctx, h, cond_latent);
         h_skip = hs.back();
         hs.pop_back();
+
+        CheckPoint("-----------------------------");
+
         if (controls.size() > 0) {
             auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
             h_skip = ggml_add(ctx, h_skip, cs); // control net condition
@@ -1143,8 +1182,10 @@ struct UNetModel : GGMLNetwork {
         }
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_5_0.forward(ctx, h, emb); // output_blocks_5_0
-        h = output_blocks_5_1.forward(ctx, h, context);
+        h = output_blocks_5_1.forward(ctx, h, cond_latent);
         h = output_blocks_5_2.forward(ctx, h);
+
+        CheckPoint("-----------------------------");
 
         // case i == 0
         h_skip = hs.back();
@@ -1158,6 +1199,9 @@ struct UNetModel : GGMLNetwork {
         h = output_blocks_6_0.forward(ctx, h, emb); // output_blocks_6_0
         h_skip = hs.back();
         hs.pop_back();
+
+        CheckPoint("-----------------------------");
+
         if (controls.size() > 0) {
             auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
             h_skip = ggml_add(ctx, h_skip, cs); // control net condition
@@ -1175,13 +1219,22 @@ struct UNetModel : GGMLNetwork {
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_8_0.forward(ctx, h, emb); // output_blocks_8_0
 
+        CheckPoint("-----------------------------");
+
         // out
         h = out_0.forward(ctx, h);
         h = ggml_silu_inplace(ctx, h);
         h = out_2.forward(ctx, h);
         // ggml_set_name(h, "bench-end");
+
+        CheckPoint("-----------------------------");
+
         return h; // [N, out_channels, h, w]
     }
 };
+
+TENSOR *unet_forward(UNetModel *unet,
+    TENSOR *image_latent, TENSOR *timesteps, TENSOR *cond_latent, TENSOR *cond_pooled, 
+    std::vector<TENSOR *>controls, float control_strength);
 
 #endif // __UNET_H__

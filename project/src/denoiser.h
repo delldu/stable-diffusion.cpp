@@ -151,9 +151,7 @@ struct Denoiser {
 };
 
 
-typedef std::function<TENSOR *(TENSOR*, float, int)> denoiser_cb_t;
-void k_sample(denoiser_cb_t denoise_model, TENSOR *x, std::vector<float> sigmas, RNG* rng);
-void set_f32_randn(TENSOR *t, RNG* rng);
+void set_scale_randn(TENSOR *t, RNG* rng, float scale /*1.0*/);
 
 
 #endif // __DENOISER_H__

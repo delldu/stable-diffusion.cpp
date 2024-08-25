@@ -32,10 +32,10 @@ struct LayerNorm {
     struct ggml_tensor* w;
     struct ggml_tensor* b;
 
-    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype = GGML_TYPE_F32)
+    void create_weight_tensors(struct ggml_context* ctx)
     {
-        w = ggml_new_tensor_1d(ctx, wtype, normalized_shape);
-        b = ggml_new_tensor_1d(ctx, wtype, normalized_shape);
+        w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, normalized_shape);
+        b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, normalized_shape);
     }
 
     void setup_weight_names(const char* prefix)
