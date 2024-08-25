@@ -31,5 +31,8 @@ void set_scale_randn(TENSOR *t, RNG* rng, float scale)
     std::vector<float> random_numbers = rng->randn(n);
     for (int i = 0; i < n; i++) {
         t->data[i] = random_numbers[i] * scale;
+        // if (abs(t->data[i]) > 1.0) {
+        //     printf("random_numbers[%d] = %.4f, scale = %.4f\n", i, random_numbers[i], scale);
+        // }
     }
 }

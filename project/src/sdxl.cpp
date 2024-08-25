@@ -154,10 +154,11 @@ void config_init(ModelConfig *config)
     if (config->seed < 0) {
         srand((int)time(NULL));
         config->seed = rand();
-
-        config->rng.manual_seed(config->seed);
-        config->denoiser.init();
     }
+
+    // config->seed &=0x7fffff; 
+    config->rng.manual_seed(config->seed); // test case 1290286573, 1058759999, 1971437833
+    config->denoiser.init();
 
     config->height -= config->height % 64;
     config->width -= config->width % 64;
@@ -258,6 +259,7 @@ int image2image(ModelConfig *config)
 
     TENSOR *noised_latent = config_latent(config, image_latent);
     check_tensor(noised_latent);
+    tensor_show((char *)"noised_latent", noised_latent);
 
     // -----------------------------------------------------------------------------------------
     unet.set_device(config->device);
@@ -277,6 +279,7 @@ int image2image(ModelConfig *config)
 
     TENSOR *y = vae_decode(&vae, noised_latent);
     check_point(y);
+    tensor_show((char *)"y", y);
     tensor_saveas_image(y, 0, config->output_path);
 
     vae.stop_engine();
@@ -330,6 +333,7 @@ int text2image(ModelConfig *config)
 
     TENSOR *noised_latent = config_latent(config, NULL);
     check_tensor(noised_latent);
+    tensor_show((char *)"noised_latent", noised_latent);
 
     // -----------------------------------------------------------------------------------------
     unet.set_device(config->device);
@@ -351,10 +355,13 @@ int text2image(ModelConfig *config)
     vae.start_engine();
     vae.load_weight(model, "vae.");
 
+    tensor_show((char *)"noised_latent", noised_latent);
     TENSOR *y = vae_decode(&vae, noised_latent); 
     tensor_destroy(noised_latent);
     check_tensor(y);
     tensor_saveas_image(y, 0, config->output_path);
+    tensor_show((char *)"y", y);
+
     tensor_destroy(y);
     vae.stop_engine();
 
@@ -455,6 +462,7 @@ TENSOR *batch_sample(
         // TENSOR *positive_output = unet_forward(unet, noised_input, timesteps, positive_latent, positive_pooled, controls, control_strength);
         CHECK_TENSOR(positive_output);
         // -----------------------------------------------------------------------------------------------------------------
+        tensor_show("------- positive_output", positive_output);
 
         // uncond
         if (control_net != NULL && control_image != NULL) {
@@ -472,6 +480,7 @@ TENSOR *batch_sample(
         TENSOR *negative_output = unet->engine_forward(ARRAY_SIZE(argv2), argv2);
         // TENSOR *negative_output = unet_forward(unet, noised_input, timesteps, negative_latent, negative_pooled, controls, control_strength);
         CHECK_TENSOR(negative_output);
+        tensor_show("------- negative_output", negative_output);
         // -----------------------------------------------------------------------------------------------------------------
 
         // update noised_output 

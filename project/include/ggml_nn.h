@@ -93,9 +93,9 @@ struct Conv2d {
     struct ggml_tensor* weight;
     struct ggml_tensor* bias = NULL;
 
-    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype = GGML_TYPE_F16)
+    void create_weight_tensors(struct ggml_context* ctx)
     {
-        weight = ggml_new_tensor_4d(ctx, wtype, kernel_size.second, kernel_size.first, in_channels, out_channels);
+        weight = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, kernel_size.second, kernel_size.first, in_channels, out_channels);
         if (has_bias) {
             bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
         }

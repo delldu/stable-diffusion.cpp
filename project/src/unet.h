@@ -181,22 +181,22 @@ struct CrossAttention {
         to_q.in_features = query_dim;
         to_q.out_features = inner_dim;
         to_q.has_bias = false;
-        to_q.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        to_q.create_weight_tensors(ctx); //, GGML_TYPE_Q8_0);
 
         to_k.in_features = context_dim;
         to_k.out_features = inner_dim;
         to_k.has_bias = false;
-        to_k.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        to_k.create_weight_tensors(ctx); // , GGML_TYPE_Q8_0);
 
         to_v.in_features = context_dim;
         to_v.out_features = inner_dim;
         to_v.has_bias = false;
-        to_v.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        to_v.create_weight_tensors(ctx); //, GGML_TYPE_Q8_0);
 
         to_out_0.in_features = inner_dim;
         to_out_0.out_features = query_dim;
         to_out_0.has_bias = false;
-        to_out_0.create_weight_tensors(ctx, GGML_TYPE_Q8_0);
+        to_out_0.create_weight_tensors(ctx); // , GGML_TYPE_Q8_0);
     }
 
     void setup_weight_names(const char* prefix)
@@ -1181,6 +1181,8 @@ struct UNetModel : GGMLNetwork {
         h = out_2.forward(ctx, h);
         // ggml_set_name(h, "bench-end");
 
+        CheckPoint("unet forward");
+        ggml_tensor_dump(h);
         return h; // [N, out_channels, h, w]
     }
 };

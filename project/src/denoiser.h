@@ -12,6 +12,7 @@
 #include <functional>
 #include <random>
 #include <vector>
+#include <nimage/common.h>
 
 #include "ggml_engine.h"
 
@@ -45,6 +46,12 @@ public:
         std::normal_distribution<float> distribution(mean, stddev);
         for (uint32_t i = 0; i < n; i++) {
             float random_number = distribution(generator);
+            // if (abs(random_number) > 1.0) {
+            //     // printf("random_number: %.4f\n", random_number);
+            //     random_number = CLAMP(random_number, -1.0, 1.0);
+            //     // printf("random_number: %.4f\n", random_number);
+            // }
+
             result.push_back(random_number);
         }
         return result;
