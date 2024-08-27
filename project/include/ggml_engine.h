@@ -399,7 +399,7 @@ int GGMLNetwork::load_weight(GGMLModel* model, const char* prefix)
 
         auto it = model->name_maps.find(real_name);
         if (it == model->name_maps.end()) {
-            syslog_error("'%s' NOT found in model weight.", real_name);
+            syslog_info("Warnning: '%s' NOT found in model weight.", real_name);
             continue;
         }
         int i = (int)it->second;

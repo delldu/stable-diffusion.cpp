@@ -28,7 +28,7 @@ struct ModelConfig {
     int seed = -1;
 
     // Control ...
-    char *control_model_path = (char *)"";
+    char *control_model_path = (char *)"/opt/ai_models/sdxl_lineart.gguf";
     char *control_image_path = (char *)"";
     float control_strength = 0.9f;
 
@@ -46,12 +46,9 @@ struct ModelConfig {
 };
 
 void config_init(ModelConfig *config);
-TENSOR *config_latent(ModelConfig *config, TENSOR *image_latent);
 void config_dump(ModelConfig *config);
 
 int text2image(ModelConfig *config);
 int image2image(ModelConfig *config);
-struct GGMLModel *load_model(ModelConfig *config);
-
 
 #endif // __SDXL_H__

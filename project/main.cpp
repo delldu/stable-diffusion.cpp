@@ -28,7 +28,7 @@ void help(char* cmd)
     printf("    --image <filename>          Input image required by image2image\n");
     printf("    --positive <prompt>         Positive prompt\n");
     printf("    --negative <prompt>         Negative prompt (default: %s)\n", sdxl_turbo_config.negative);
-    printf("    --noise <strength>          Noise strength (default: %.2f)\n", sdxl_turbo_config.noise_strength);
+    printf("    --noise <strength>          Noise strength for image2image (default: %.2f)\n", sdxl_turbo_config.noise_strength);
     printf("    --steps <n>                 Sample steps (default: %d)\n", sdxl_turbo_config.sample_steps);
     printf("    --seed <n>                  Random seed (default: %d)\n", sdxl_turbo_config.seed);
 

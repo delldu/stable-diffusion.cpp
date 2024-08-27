@@ -7,10 +7,11 @@
 ************************************************************************************/
 
 #include "sdxl.h"
-
 #include "vae.h"
 #include "clip.h"
 #include "unet.h"
+#include "adapter.h"
+
 #include <ggml_engine.h>
 
 struct ControlNet {
@@ -35,21 +36,33 @@ static TENSOR *denoise_model(
     float control_strength,
     Denoiser *denoiser,
     TENSOR* input, float sigma, int step);
+
+static TENSOR *config_latent(ModelConfig *config, TENSOR *image_latent);
+static std::vector<TENSOR *>get_controls(ModelConfig *config);
+static struct GGMLModel *load_model(ModelConfig *config);
+
 // -----------------------------------------------------------------------------------------------------------------------------------------------
-
-
-struct GGMLModel *load_model(ModelConfig *config)
+static struct GGMLModel *load_model(ModelConfig *config)
 {
     struct GGMLModel *model = new GGMLModel();
-    model->preload(config->model_path);
-    model->remap("first_stage_model.", "vae.");
-    model->remap("model.diffusion_model.", "unet.");
-    model->remap(".transformer_blocks.", ".transformer.");
-    model->remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
-    model->remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
+    if (model != NULL && model->preload(config->model_path) == RET_OK) {
+        model->preload(config->model_path);
+        model->remap("first_stage_model.", "vae.");
+        model->remap("model.diffusion_model.", "unet.");
+        model->remap(".transformer_blocks.", ".transformer.");
+        model->remap("cond_stage_model.transformer.text_model.", "clip.text_model.");
+        model->remap("cond_stage_model.1.transformer.text_model.", "clip.text_model2.");
 
-    return model;
+        return model;
+    }
+
+    if (model != NULL) {
+        delete model;
+    }
+
+    return NULL;;
 }
+
 
 void config_dump(ModelConfig *config)
 {
@@ -105,8 +118,84 @@ void config_init(ModelConfig *config)
         config_dump(config);
 }
 
+static std::vector<TENSOR *>get_controls(ModelConfig *config)
+{
+    std::vector<TENSOR *> res(4, NULL);
+
+    if (strlen(config->control_image_path) < 1 || ! file_exist(config->control_image_path) 
+        || ! file_exist(config->control_model_path) || config->control_strength < 0.01) {
+        return res;
+    }
+
+    struct GGMLModel *model = new GGMLModel();
+    if (model == NULL || model->preload(config->control_model_path) != RET_OK) {
+        return res;
+    }
+
+    TENSOR *image_tensor = tensor_load_image(config->control_image_path, 0 /*alpha */);
+    if (! tensor_valid(image_tensor)) {
+        return res;
+    }
+    tensor_show((char *)"image_tensor", image_tensor);
+
+
+    FullAdapterXL net;
+    net.set_device(config->device);
+    net.start_engine();
+    net.load_weight(model, "adapter.");
+
+    TENSOR *argv[] = { image_tensor };
+    TENSOR *predict = net.engine_forward(ARRAY_SIZE(argv), argv);
+
+    res[0] = net.get_output_tensor((char *)"body0");
+    if (tensor_valid(res[0])) {
+        tensor_show((char *)"body0", res[0]);
+    } else {
+        CheckPoint(" no res[0] ----------");
+    }
+
+
+    res[1] = net.get_output_tensor((char *)"body1");
+    if (tensor_valid(res[1])) {
+        tensor_show((char *)"body1", res[1]);
+    } else {
+        CheckPoint(" no res[1] ----------");
+    }
+
+    res[2] = net.get_output_tensor((char *)"body2");
+    if (tensor_valid(res[2])) {
+        tensor_show((char *)"body0", res[2]);
+    } else {
+        CheckPoint(" no res[2] ----------");
+    }
+
+    res[3] = net.get_output_tensor((char *)"body3");
+    if (tensor_valid(res[3])) {
+        tensor_show((char *)"body0", res[3]);
+    } else {
+        CheckPoint(" no res[3] ----------");
+    }
+
+    // net.dump();
+    net.stop_engine();
+    if (tensor_valid(predict)) {
+        tensor_destroy(predict);
+    }
+
+    CheckPoint("----------");
+    if (model != NULL) {
+        model->clear();
+        delete model;
+    }
+    CheckPoint("----------");
+
+    return res;
+}
+
+
+
 // x = image_latent + sigmas[0]*noise
-TENSOR *config_latent(ModelConfig *config, TENSOR *image_latent)
+static TENSOR *config_latent(ModelConfig *config, TENSOR *image_latent)
 {
     int B = 1;
     int C = 4;
@@ -131,9 +220,13 @@ int image2image(ModelConfig *config)
     TextEncoder clip;
     AutoEncoderKL vae;
     UNetModel unet;
-     
+
     syslog_info("Creating image from image ...");
     config_init(config);
+
+    std::vector<TENSOR *> controls = get_controls(config);
+    return RET_OK;
+
 
     TENSOR *image_tensor = tensor_load_image(config->input_image, 0 /*with alpha */);
     check_tensor(image_tensor);
@@ -144,11 +237,10 @@ int image2image(ModelConfig *config)
         tensor_destroy(t);
     }
 
-
     GGMLModel *model = load_model(config);
     check_point(model != NULL);
 
-
+    // -----------------------------------------------------------------------------------------
     clip.set_device(config->device);
     clip.start_engine();
     clip.load_weight(model, "clip.");
@@ -160,7 +252,6 @@ int image2image(ModelConfig *config)
     check_tensor(positive_latent);
     check_tensor(positive_pooled);
 
-
     std::vector<TENSOR *> negative_latent_pooled = clip_encode(&clip, config->negative, config->height, config->width);
     check_point(negative_latent_pooled.size() == 2);
     TENSOR *negative_latent = negative_latent_pooled[0];
@@ -171,6 +262,7 @@ int image2image(ModelConfig *config)
     clip.stop_engine();
     syslog_info("clip encode/decode OK.");
 
+    // -----------------------------------------------------------------------------------------
     vae.set_device(config->device);
     vae.start_engine();
     vae.load_weight(model, "vae.");
@@ -184,19 +276,23 @@ int image2image(ModelConfig *config)
     check_tensor(noised_latent);
 
     // -----------------------------------------------------------------------------------------
-    unet.set_device(config->device);
-    unet.start_engine();
-    unet.load_weight(model, "unet.");
+    {
+        std::vector<TENSOR *> controls = get_controls(config);
 
-    euler_sample(&unet, 
-        noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
-        NULL /*contrl_net */, 
-        NULL /*control_image */,
-        config->control_strength,
-        config->sigmas, &(config->rng), &(config->denoiser));
+        unet.set_device(config->device);
+        unet.start_engine();
+        unet.load_weight(model, "unet.");
 
-    unet.stop_engine();
-    syslog_info("unet sample OK !");
+        euler_sample(&unet, 
+            noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
+            NULL /*contrl_net */, 
+            NULL /*control_image */,
+            config->control_strength,
+            config->sigmas, &(config->rng), &(config->denoiser));
+
+        unet.stop_engine();
+        syslog_info("unet sample OK !");
+    }
     // -----------------------------------------------------------------------------------------
 
     TENSOR *y = vae_decode(&vae, noised_latent);
@@ -220,14 +316,18 @@ int text2image(ModelConfig *config)
     TextEncoder clip;
     AutoEncoderKL vae;
     UNetModel unet;
-     
-    syslog_info("Creating image from text ...");
 
+    syslog_info("Creating image from text ...");
     config_init(config);
+
+    std::vector<TENSOR *> controls = get_controls(config);
+    return RET_OK;
+
 
     GGMLModel *model = load_model(config);
     check_point(model != NULL);
 
+    // -----------------------------------------------------------------------------------------
     clip.set_device(config->device);
     clip.start_engine();
     clip.load_weight(model, "clip.");
@@ -238,7 +338,6 @@ int text2image(ModelConfig *config)
     TENSOR *positive_pooled = positive_latent_pooled[1];
     check_tensor(positive_latent);
     check_tensor(positive_pooled);
-
 
     std::vector<TENSOR *> negative_latent_pooled = clip_encode(&clip, config->negative, config->height, config->width);
     check_point(negative_latent_pooled.size() == 2);
@@ -254,22 +353,25 @@ int text2image(ModelConfig *config)
     check_tensor(noised_latent);
 
     // -----------------------------------------------------------------------------------------
-    unet.set_device(config->device);
-    unet.start_engine();
-    unet.load_weight(model, "unet.");
+    {
+        std::vector<TENSOR *> controls = get_controls(config);
 
-    euler_sample(&unet, 
-        noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
-        NULL /*contrl_net */, 
-        NULL /*control_image */,
-        config->control_strength,
-        config->sigmas, &(config->rng), &(config->denoiser));
+        unet.set_device(config->device);
+        unet.start_engine();
+        unet.load_weight(model, "unet.");
 
-    unet.stop_engine();
-    syslog_info("unet sample OK.");
+        euler_sample(&unet, 
+            noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
+            NULL /*contrl_net */, 
+            NULL /*control_image */,
+            config->control_strength,
+            config->sigmas, &(config->rng), &(config->denoiser));
+
+        unet.stop_engine();
+        syslog_info("unet sample OK.");
+    }
 
     // -----------------------------------------------------------------------------------------
-
     vae.set_device(config->device);
     vae.start_engine();
     vae.load_weight(model, "vae.");
