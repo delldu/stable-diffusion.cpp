@@ -14,26 +14,18 @@
 
 #include <ggml_engine.h>
 
-struct ControlNet {
-    int a = 100; // dummy
-};
-
 static void euler_sample(
     UNetModel *unet,
     TENSOR* x, // image prompt
     TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
-    ControlNet *control_net,
-    TENSOR* control_image, // like canny image ...
-    float control_strength,
+    TENSOR* controls_0, TENSOR *controls_1, TENSOR *controls_2, TENSOR *controls_3,
     const std::vector<float>& sigmas,
     RNG *rng, Denoiser *denoiser);
 
 static TENSOR *denoise_model(
     UNetModel *unet,
     TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
-    ControlNet *control_net,
-    TENSOR* control_image, // like canny image ...
-    float control_strength,
+    TENSOR* controls_0, TENSOR *controls_1, TENSOR *controls_2, TENSOR *controls_3,
     Denoiser *denoiser,
     TENSOR* input, float sigma, int step);
 
@@ -120,7 +112,7 @@ void config_init(ModelConfig *config)
 
 static std::vector<TENSOR *>get_controls(ModelConfig *config)
 {
-    std::vector<TENSOR *> res(4, NULL);
+    std::vector<TENSOR *> res(4, NULL); // NEED free res[...] for get_output_tensor -- tensor_copy(...)
 
     if (strlen(config->control_image_path) < 1 || ! file_exist(config->control_image_path) 
         || ! file_exist(config->control_model_path) || config->control_strength < 0.01) {
@@ -132,12 +124,18 @@ static std::vector<TENSOR *>get_controls(ModelConfig *config)
         return res;
     }
 
-    TENSOR *image_tensor = tensor_load_image(config->control_image_path, 0 /*alpha */);
+    TENSOR *image_tensor = tensor_load_image(config->control_image_path, 0 /*alpha */); // like canny image 
     if (! tensor_valid(image_tensor)) {
         return res;
     }
-    tensor_show((char *)"image_tensor", image_tensor);
-
+    if (image_tensor->height != config->height || image_tensor->width != config->width) {
+        TENSOR *t = image_tensor; // save as temp
+        image_tensor = tensor_zoom(t, config->height, config->width);
+        tensor_destroy(t);
+        if (! tensor_valid(image_tensor))
+            return res;
+    }
+    // tensor_show((char *)"image_tensor", image_tensor);
 
     FullAdapterXL net;
     net.set_device(config->device);
@@ -146,48 +144,32 @@ static std::vector<TENSOR *>get_controls(ModelConfig *config)
 
     TENSOR *argv[] = { image_tensor };
     TENSOR *predict = net.engine_forward(ARRAY_SIZE(argv), argv);
+    if (tensor_valid(predict)) { // useless
+        tensor_destroy(predict);
+    }
 
+    // Save body0, body1, body2, body3 to res ...
     res[0] = net.get_output_tensor((char *)"body0");
-    if (tensor_valid(res[0])) {
-        tensor_show((char *)"body0", res[0]);
-    } else {
-        CheckPoint(" no res[0] ----------");
-    }
-
-
     res[1] = net.get_output_tensor((char *)"body1");
-    if (tensor_valid(res[1])) {
-        tensor_show((char *)"body1", res[1]);
-    } else {
-        CheckPoint(" no res[1] ----------");
-    }
-
     res[2] = net.get_output_tensor((char *)"body2");
-    if (tensor_valid(res[2])) {
-        tensor_show((char *)"body0", res[2]);
-    } else {
-        CheckPoint(" no res[2] ----------");
-    }
-
     res[3] = net.get_output_tensor((char *)"body3");
-    if (tensor_valid(res[3])) {
-        tensor_show((char *)"body0", res[3]);
-    } else {
-        CheckPoint(" no res[3] ----------");
+    for (int i = 0; i < 4; i++) {
+        if (! tensor_valid(res[i]))
+            continue;
+
+        int n = res[i]->batch * res[i]->chan * res[i]->height * res[i]->width;
+        for (int j = 0; j < n; j++) {
+            res[i]->data[j] = res[i]->data[j] * config->control_strength;
+        }
     }
 
     // net.dump();
     net.stop_engine();
-    if (tensor_valid(predict)) {
-        tensor_destroy(predict);
-    }
 
-    CheckPoint("----------");
     if (model != NULL) {
         model->clear();
         delete model;
     }
-    CheckPoint("----------");
 
     return res;
 }
@@ -223,10 +205,6 @@ int image2image(ModelConfig *config)
 
     syslog_info("Creating image from image ...");
     config_init(config);
-
-    std::vector<TENSOR *> controls = get_controls(config);
-    return RET_OK;
-
 
     TENSOR *image_tensor = tensor_load_image(config->input_image, 0 /*with alpha */);
     check_tensor(image_tensor);
@@ -285,9 +263,7 @@ int image2image(ModelConfig *config)
 
         euler_sample(&unet, 
             noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
-            NULL /*contrl_net */, 
-            NULL /*control_image */,
-            config->control_strength,
+            controls[0], controls[1], controls[2], controls[3],
             config->sigmas, &(config->rng), &(config->denoiser));
 
         unet.stop_engine();
@@ -319,9 +295,6 @@ int text2image(ModelConfig *config)
 
     syslog_info("Creating image from text ...");
     config_init(config);
-
-    std::vector<TENSOR *> controls = get_controls(config);
-    return RET_OK;
 
 
     GGMLModel *model = load_model(config);
@@ -362,9 +335,7 @@ int text2image(ModelConfig *config)
 
         euler_sample(&unet, 
             noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
-            NULL /*contrl_net */, 
-            NULL /*control_image */,
-            config->control_strength,
+            controls[0], controls[1], controls[2], controls[3],
             config->sigmas, &(config->rng), &(config->denoiser));
 
         unet.stop_engine();
@@ -396,9 +367,7 @@ static void euler_sample(
     UNetModel *unet,
     TENSOR* x, // image prompt
     TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
-    ControlNet *control_net,
-    TENSOR* control_image, // like canny image ...
-    float control_strength,
+    TENSOR* controls_0, TENSOR *controls_1, TENSOR *controls_2, TENSOR *controls_3,
     const std::vector<float>& sigmas,
     RNG *rng, Denoiser *denoiser)
 {
@@ -418,9 +387,7 @@ static void euler_sample(
             TENSOR *noised_output = denoise_model(
                 unet,
                 positive_latent, positive_pooled, negative_latent, negative_pooled, config_scale, // text prompt
-                control_net,
-                control_image, // like canny image ...
-                control_strength,
+                controls_0, controls_1, controls_2, controls_3,
                 denoiser,
                 x, sigma, i + 1 /* step */);
             check_avoid(noised_output);
@@ -470,9 +437,7 @@ static void euler_sample(
             TENSOR *noised_output = denoise_model(
                 unet,
                 positive_latent, positive_pooled, negative_latent, negative_pooled, config_scale, // text prompt
-                control_net,
-                control_image, // like canny image ...
-                control_strength,
+                controls_0, controls_1, controls_2, controls_3,
                 denoiser,
                 x, sigma, i + 1 /* step */);
             check_avoid(noised_output);
@@ -505,9 +470,7 @@ static void euler_sample(
 static TENSOR *denoise_model(
     UNetModel *unet,
     TENSOR* positive_latent, TENSOR* positive_pooled, TENSOR* negative_latent, TENSOR* negative_pooled, float config_scale, // text prompt
-    ControlNet *control_net,
-    TENSOR* control_image, // like canny image ...
-    float control_strength,
+    TENSOR* controls_0, TENSOR *controls_1, TENSOR *controls_2, TENSOR *controls_3,
     Denoiser *denoiser,
     TENSOR* input, float sigma, int step)
 {
@@ -546,37 +509,21 @@ static TENSOR *denoise_model(
     // f32 [  2048,    77,     1,     1], positive_latent
     // f32 [  2816,     1,     1,     1], positive_pooled
 
-    // cond
-    if (control_net != NULL && control_image != NULL) {
-        TENSOR *argv[] = {noised_input, control_image, timesteps, positive_latent, positive_pooled};
-        // TENSOR *temp = control_net->engine_forward(ARRAY_SIZE(argv), argv);
-        // // controls = control_net->controls;
-        // tensor_destroy(temp);
-    }
-
-    // unet->forward ...
+    // cond unet->forward ...
     // -----------------------------------------------------------------------------------------------------------------
     // unet->controls = controls;
-    unet->control_strength = control_strength;
-    TENSOR *argv1[] = {noised_input, timesteps, positive_latent, positive_pooled};
+    // unet->control_strength = control_strength;
+    TENSOR *argv1[] = {noised_input, timesteps, positive_latent, positive_pooled, controls_0, controls_1, controls_2, controls_3};
     TENSOR *positive_output = unet->engine_forward(ARRAY_SIZE(argv1), argv1);
     // TENSOR *positive_output = unet_forward(unet, noised_input, timesteps, positive_latent, positive_pooled, controls, control_strength);
     CHECK_TENSOR(positive_output);
     // -----------------------------------------------------------------------------------------------------------------
 
-    // uncond
-    if (control_net != NULL && control_image != NULL) {
-        TENSOR *argv[] = {noised_input, control_image, timesteps, negative_latent, negative_pooled};
-        // TENSOR *temp = control_net->engine_forward(ARRAY_SIZE(argv), argv);
-        // // controls = control_net->controls;
-        // tensor_destroy(temp);
-    }
-
     // unet->forward ...
     // -----------------------------------------------------------------------------------------------------------------
-    TENSOR *argv2[] = {noised_input, timesteps, negative_latent, negative_pooled};
+    TENSOR *argv2[] = {noised_input, timesteps, negative_latent, negative_pooled, controls_0, controls_1, controls_2, controls_3};
     // unet->controls = controls;
-    unet->control_strength = control_strength;
+    // unet->control_strength = control_strength;
     TENSOR *negative_output = unet->engine_forward(ARRAY_SIZE(argv2), argv2);
     // TENSOR *negative_output = unet_forward(unet, noised_input, timesteps, negative_latent, negative_pooled, controls, control_strength);
     CHECK_TENSOR(negative_output);

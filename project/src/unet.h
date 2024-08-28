@@ -591,8 +591,8 @@ struct UNetModel : GGMLNetwork {
     int adm_in_channels = 2816; // only for VERSION_XL/SVD
 
     // ---------------------------------------------------------
-    std::vector<struct ggml_tensor*> controls = {};
-    float control_strength = 0.f;
+    // std::vector<struct ggml_tensor*> controls = {};
+    // float control_strength = 0.f;
 
     // ---------------------------------------------------------
     Linear time_embed_0;
@@ -1006,6 +1006,10 @@ struct UNetModel : GGMLNetwork {
         struct ggml_tensor* timesteps = argv[1];
         struct ggml_tensor* cond_latent = argv[2];
         struct ggml_tensor* cond_pooled = argv[3];
+        struct ggml_tensor* controls_0 = argv[4];
+        struct ggml_tensor* controls_1 = argv[5];
+        struct ggml_tensor* controls_2 = argv[6];
+        struct ggml_tensor* controls_3 = argv[7];
 
         if (cond_latent != NULL && cond_latent->ne[2] != x->ne[3]) {
             cond_latent = ggml_repeat(ctx, cond_latent, ggml_new_tensor_3d(ctx, GGML_TYPE_F32, cond_latent->ne[0], cond_latent->ne[1], x->ne[3]));
@@ -1037,141 +1041,111 @@ struct UNetModel : GGMLNetwork {
         // input block 1-11
         // size_t len_mults = channel_mult.size();
         // [N, 4*model_channels, h/8, w/8]
-
+        // ----------------------------------------------------------------------------------------------
         // i == 0
+        // ggml_tensor_dump(controls_0); // f32 [    64,    32,   320,     1], net.input_4
         h = input_blocks_1_0.forward(ctx, h, emb);
+        // ggml_tensor_dump(h); // f32 [   128,    64,   320,     1], 
         hs.push_back(h);
         h = input_blocks_2_0.forward(ctx, h, emb);
+        // ggml_tensor_dump(h); // f32 [   128,    64,   320,     1], 
         hs.push_back(h);
-        h = input_blocks_3_0.forward(ctx, h);
+        h = input_blocks_3_0.forward(ctx, h); // DownSampleBlock
+        // ggml_tensor_dump(h); // f32 [    64,    32,   320,     1],
+        if (controls_0 != NULL) {
+            h = ggml_add(ctx, h, controls_0);
+        }
         hs.push_back(h);
 
         // i == 1
+        // ggml_tensor_dump(controls_1); // f32 [    64,    32,   640,     1], net.input_5
         h = input_blocks_4_0.forward(ctx, h, emb);
+        // ggml_tensor_dump(h); // f32 [    64,    32,   640,     1],
         hs.push_back(h);
         h = input_blocks_5_0.forward(ctx, h, emb);
+        // ggml_tensor_dump(h); // f32 [    64,    32,   640,     1],
+        if (controls_1 != NULL) {
+            h = ggml_add(ctx, h, controls_1);
+        }
         hs.push_back(h);
-        h = input_blocks_6_0.forward(ctx, h);
+        h = input_blocks_6_0.forward(ctx, h); // DownSampleBlock
+        // ggml_tensor_dump(h); // f32 [    32,    16,   640,     1],
         hs.push_back(h);
 
         // i == 2
-        h = input_blocks_7_0.forward(ctx, h, emb);
-        h = input_blocks_7_1.forward(ctx, h, cond_latent);
+        // ggml_tensor_dump(controls_2);  // f32 [    32,    16,  1280,     1], net.input_6
+        h = input_blocks_7_0.forward(ctx, h, emb); // ResBlock
+        h = input_blocks_7_1.forward(ctx, h, cond_latent); // SpatialTransformer
+        // ggml_tensor_dump(h); // f32 [    32,    16,  1280,     1],
         hs.push_back(h);
-        h = input_blocks_8_0.forward(ctx, h, emb);
-        h = input_blocks_8_1.forward(ctx, h, cond_latent);
+        h = input_blocks_8_0.forward(ctx, h, emb); // ResBlock
+        h = input_blocks_8_1.forward(ctx, h, cond_latent); // SpatialTransformer
+        // ggml_tensor_dump(h); // f32 [    32,    16,  1280,     1],
+        if (controls_2 != NULL) {
+            h = ggml_add(ctx, h, controls_2);
+        }
         hs.push_back(h);
 
         // middle_block
+        // ------------------------------------------------------------------------------------------------
+        // ggml_tensor_dump(controls_3); // f32 [    32,    16,  1280,     1], net.input_7
         h = middle_block_0.forward(ctx, h, emb); // [N, 4*model_channels, h/8, w/8]
+        // ggml_tensor_dump(h); // f32 [    32,    16,  1280,     1],
         h = middle_block_1.forward(ctx, h, cond_latent); // [N, 4*model_channels, h/8, w/8]
+        // ggml_tensor_dump(h); // f32 [    32,    16,  1280,     1],
         h = middle_block_2.forward(ctx, h, emb); // [N, 4*model_channels, h/8, w/8]
-
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[controls.size() - 1], control_strength);
-            h = ggml_add(ctx, h, cs); // middle control
+        // ggml_tensor_dump(h); // f32 [    32,    16,  1280,     1],
+        if (controls_3 != NULL) {
+            h = ggml_add(ctx, h, controls_3);
         }
 
-        int control_offset = controls.size() - 2;
 
         // output_blocks
-        // case i == 2
-        auto h_skip = hs.back();
-        hs.pop_back();
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
+        // ------------------------------------------------------------------------------------------------
+        // output_blocks case i == 2
+        auto h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_0_0.forward(ctx, h, emb); // output_blocks_0_0
         h = output_blocks_0_1.forward(ctx, h, cond_latent);
-        h_skip = hs.back();
-        hs.pop_back();
 
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
+        h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_1_0.forward(ctx, h, emb); // output_blocks_1_0
         h = output_blocks_1_1.forward(ctx, h, cond_latent);
-        h_skip = hs.back();
-        hs.pop_back();
 
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
+        h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_2_0.forward(ctx, h, emb); // output_blocks_2_0
         h = output_blocks_2_1.forward(ctx, h, cond_latent);
         h = output_blocks_2_2.forward(ctx, h);
 
-        // case i == 1
-        h_skip = hs.back();
-        hs.pop_back();
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
-
+        // output_blocks case i == 1
+        h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_3_0.forward(ctx, h, emb); // output_blocks_3_0
         h = output_blocks_3_1.forward(ctx, h, cond_latent);
-        h_skip = hs.back();
-        hs.pop_back();
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
+
+        h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_4_0.forward(ctx, h, emb); // output_blocks_4_0
         h = output_blocks_4_1.forward(ctx, h, cond_latent);
-        h_skip = hs.back();
-        hs.pop_back();
 
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
+        h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_5_0.forward(ctx, h, emb); // output_blocks_5_0
         h = output_blocks_5_1.forward(ctx, h, cond_latent);
         h = output_blocks_5_2.forward(ctx, h);
 
-        // case i == 0
-        h_skip = hs.back();
-        hs.pop_back();
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
+        // output_blocks case i == 0
+        h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_6_0.forward(ctx, h, emb); // output_blocks_6_0
-        h_skip = hs.back();
-        hs.pop_back();
 
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
+        h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_7_0.forward(ctx, h, emb); //output_blocks_7_0
-        h_skip = hs.back();
-        hs.pop_back();
-        if (controls.size() > 0) {
-            auto cs = ggml_scale_inplace(ctx, controls[control_offset], control_strength);
-            h_skip = ggml_add(ctx, h_skip, cs); // control net condition
-            control_offset--;
-        }
+
+        h_skip = hs.back(); hs.pop_back();
         h = ggml_concat(ctx, h, h_skip, 2);
         h = output_blocks_8_0.forward(ctx, h, emb); // output_blocks_8_0
 
@@ -1187,6 +1161,6 @@ struct UNetModel : GGMLNetwork {
 
 TENSOR *unet_forward(UNetModel *unet,
     TENSOR *image_latent, TENSOR *timesteps, TENSOR *cond_latent, TENSOR *cond_pooled, 
-    std::vector<TENSOR *>controls, float control_strength);
+    TENSOR *controls_0, TENSOR *controls_1, TENSOR *controls_2, TENSOR *controls_3);
 
 #endif // __UNET_H__

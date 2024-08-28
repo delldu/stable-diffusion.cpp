@@ -36,7 +36,7 @@ struct AdapterResnetBlock {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[512];
+        char s[GGML_MAX_NAME];
 
         snprintf(s, sizeof(s), "%s%s", prefix, "block1.");
         block1.setup_weight_names(s);
@@ -46,37 +46,26 @@ struct AdapterResnetBlock {
     }
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
+        // h = self.act(self.block1(x))
+        // h = self.block2(h)
+        // return h + x
         auto h = block1.forward(ctx, x);
         h = ggml_relu(ctx, h);
         h = block2.forward(ctx, h);
 
-      	return h;
+      	h = ggml_add(ctx, x, h);
+        return h;
     }
 };
 
-
-// self.downsample = None
-// if down:
-//     self.downsample = nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=True)
-// else:
-//     self.downsample = nn.Identity()
-
-// self.in_conv = nn.Identity()
-// if in_channels != out_channels:
-//     self.in_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-
 struct AdapterBlock {
-    // network hparams
     int in_channels = 320;
     int out_channels = 320;
     bool down = false;
 
-    // network params
     Conv2d in_conv;
-
     struct AdapterResnetBlock resnets_0;
     struct AdapterResnetBlock resnets_1;
-
 
     void create_weight_tensors(struct ggml_context* ctx) {
         if (in_channels != out_channels) {
@@ -88,7 +77,6 @@ struct AdapterBlock {
             in_conv.create_weight_tensors(ctx);
         }
         
-
         resnets_0.channels = out_channels;
         resnets_0.create_weight_tensors(ctx);
 
@@ -97,7 +85,7 @@ struct AdapterBlock {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[512];
+        char s[GGML_MAX_NAME];
 
         if (in_channels != out_channels) {
             snprintf(s, sizeof(s), "%s%s", prefix, "in_conv.");
@@ -244,9 +232,9 @@ struct FullAdapterXL : GGMLNetwork {
     }
 
     void setup_weight_names(const char *prefix) {
-        char s[512];
+        char s[GGML_MAX_NAME];
 
-        ggml_format_name(a, "a");
+        ggml_format_name(a, "net.input_a_for_im2col");
 
         snprintf(s, sizeof(s), "%s%s", prefix, "conv_in.");
         conv_in.setup_weight_names(s);
@@ -265,46 +253,33 @@ struct FullAdapterXL : GGMLNetwork {
         struct ggml_tensor* x = argv[0];
 
         // x = self.unshuffle(x)
-        CheckPoint("forward 1:");
-        ggml_tensor_dump(a);
-        ggml_tensor_dump(x);
-
         x = ggml_im2col(ctx, a, x, R, R, 0, 0, 1, 1, true, GGML_TYPE_F32);
         x = ggml_permute(ctx, x, 2, 0, 1, 3); // from src index to dst: 0->2, 1->0, 2->1, 3->3
-        CheckPoint("forward 2:");
-        ggml_tensor_dump(x);
+        x = ggml_cont(ctx, x); // import !!!
+        // ggml_set_name(x, "unshuffle");
+        // ggml_set_output(x);
 
         x = conv_in.forward(ctx, x);
-        CheckPoint("forward 3:");
-        ggml_tensor_dump(x);
+        // ggml_set_name(x, "conv_in");
+        // ggml_set_output(x);
 
         x = body_0.forward(ctx, x);
         ggml_set_name(x, "body0");
         ggml_set_output(x);
-        CheckPoint("-------  body0 forward 4:");
-        ggml_tensor_dump(x);
 
         x = body_1.forward(ctx, x);
         ggml_set_name(x, "body1");
         ggml_set_output(x);
-        CheckPoint("-------  body1 forward 4:");
-        ggml_tensor_dump(x);
 
         x = body_2.forward(ctx, x);
         ggml_set_name(x, "body2");
         ggml_set_output(x);
 
-        CheckPoint("-------  body2 forward 4:");
-        ggml_tensor_dump(x);
-
         x = body_3.forward(ctx, x);
         ggml_set_name(x, "body3");
         ggml_set_output(x);
 
-        CheckPoint("-------  body3 forward 4:");
-        ggml_tensor_dump(x);
-
-    	return x;
+        return x;
     }
 };
 

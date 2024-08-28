@@ -72,7 +72,7 @@ struct GGMLEngine {
     void* graph_cpu_buffer = NULL;
 
     // Output tensors
-    std::unordered_map<char*, TENSOR*> output_tensors = {};
+    std::unordered_map<std::string, TENSOR*> output_tensors = {};
 };
 
 struct GGMLModel {
@@ -506,10 +506,6 @@ struct ggml_cgraph* GGMLNetwork::m_build_graph(int argc, struct ggml_tensor* arg
 void GGMLNetwork::m_clear_output_tensors()
 {
     for (auto& pair : m_ggml_engine.output_tensors) {
-        char* n = (char*)pair.first;
-        if (n != NULL) {
-            free(n);
-        }
         TENSOR* t = (TENSOR*)pair.second;
         if (tensor_valid(t)) {
             tensor_destroy(t);
@@ -558,7 +554,7 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
             if (leaf->flags & GGML_TENSOR_FLAG_OUTPUT) {
                 // Saving leafs ...
                 TENSOR* yt = get_tensor_value(leaf, true /*from_backend*/);
-                m_ggml_engine.output_tensors[strdup(leaf->name)] = yt;
+                m_ggml_engine.output_tensors[std::string(leaf->name)] = yt;
             }
         }
 
@@ -567,7 +563,7 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
             if (node->flags & GGML_TENSOR_FLAG_OUTPUT) {
                 // Saving nodes ...
                 TENSOR* yt = get_tensor_value(node, true /*from_backend*/);
-                m_ggml_engine.output_tensors[strdup(node->name)] = yt;
+                m_ggml_engine.output_tensors[std::string(node->name)] = yt;
             }
         }
     }
@@ -579,7 +575,14 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
 
 TENSOR* GGMLNetwork::get_output_tensor(char* name)
 {
-    return m_ggml_engine.output_tensors[name];
+    auto it = m_ggml_engine.output_tensors.find(name);
+    if (it == m_ggml_engine.output_tensors.end()) {
+        syslog_info("Warnning: '%s' NOT found in output tensors.", name);
+        return NULL;
+    }
+    TENSOR *output_tensor = (TENSOR *)it->second;
+
+    return tensor_copy(output_tensor);
 }
 
 TENSOR* GGMLNetwork::engine_forward(int argc, TENSOR* argv[])
@@ -599,6 +602,8 @@ TENSOR* GGMLNetwork::engine_forward(int argc, TENSOR* argv[])
     {
         size_t mem_size = 0;
         for (int i = 0; i < argc; i++) {
+            if (argv[i] == NULL)
+                continue;
             mem_size += argv[i]->batch * argv[i]->chan * argv[i]->height * argv[i]->width * sizeof(float);
         }
 

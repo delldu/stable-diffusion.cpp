@@ -30,7 +30,7 @@ struct ModelConfig {
     // Control ...
     char *control_model_path = (char *)"/opt/ai_models/sdxl_lineart.gguf";
     char *control_image_path = (char *)"";
-    float control_strength = 0.9f;
+    float control_strength = 0.8f;
 
     // Output ...
     int width = 512;
