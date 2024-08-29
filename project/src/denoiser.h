@@ -12,7 +12,7 @@
 #include <functional>
 #include <random>
 #include <vector>
-#include <nimage/common.h>
+// #include <nimage/common.h>
 
 #include "ggml_engine.h"
 
@@ -46,12 +46,6 @@ public:
         std::normal_distribution<float> distribution(mean, stddev);
         for (uint32_t i = 0; i < n; i++) {
             float random_number = distribution(generator);
-            // if (abs(random_number) > 1.0) {
-            //     // printf("random_number: %.4f\n", random_number);
-            //     random_number = CLAMP(random_number, -1.0, 1.0);
-            //     // printf("random_number: %.4f\n", random_number);
-            // }
-
             result.push_back(random_number);
         }
         return result;
@@ -65,19 +59,19 @@ struct Denoiser {
     float sigmas[TIMESTEPS];            // 0.0292, ... , 14.6147
     float log_sigmas[TIMESTEPS];        // -3.5347, ..., 2.6820
 
-    void dump()
-    {
-        printf("Denoiser\n");
-        printf("sigmas: ");
-        for (int i = 0; i < TIMESTEPS; i++) {
-            printf("%.4f%s ", sigmas[i], (i < TIMESTEPS - 1) ? "," : "\n");
-        }
+    // void dump()
+    // {
+    //     printf("Denoiser\n");
+    //     printf("sigmas: ");
+    //     for (int i = 0; i < TIMESTEPS; i++) {
+    //         printf("%.4f%s ", sigmas[i], (i < TIMESTEPS - 1) ? "," : "\n");
+    //     }
 
-        printf("log_sigmas: ");
-        for (int i = 0; i < TIMESTEPS; i++) {
-            printf("%.4f%s ", log_sigmas[i], (i < TIMESTEPS - 1) ? "," : "\n");
-        }
-    }
+    //     printf("log_sigmas: ");
+    //     for (int i = 0; i < TIMESTEPS; i++) {
+    //         printf("%.4f%s ", log_sigmas[i], (i < TIMESTEPS - 1) ? "," : "\n");
+    //     }
+    // }
 
     void init()
     {

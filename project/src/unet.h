@@ -87,10 +87,10 @@ struct GEGLU {
     struct ggml_tensor* w;
     struct ggml_tensor* b;
 
-    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype = GGML_TYPE_F16)
+    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype = GGML_TYPE_Q8_0)
     {
         w = ggml_new_tensor_2d(ctx, wtype, dim_in, dim_out * 2);
-        b = ggml_new_tensor_1d(ctx, wtype, dim_out * 2);
+        b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, dim_out * 2);
     }
 
     void setup_weight_names(const char* prefix)
@@ -141,7 +141,7 @@ struct FeedForward {
 
         net_2.in_features = inner_dim;
         net_2.out_features = dim_out;
-        net_2.create_weight_tensors(ctx, GGML_TYPE_F32);
+        net_2.create_weight_tensors(ctx);
     }
 
     void setup_weight_names(const char* prefix)
@@ -1098,7 +1098,6 @@ struct UNetModel : GGMLNetwork {
         if (controls_3 != NULL) {
             h = ggml_add(ctx, h, controls_3);
         }
-
 
         // output_blocks
         // ------------------------------------------------------------------------------------------------

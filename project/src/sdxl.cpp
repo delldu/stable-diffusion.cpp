@@ -260,13 +260,18 @@ int image2image(ModelConfig *config)
         unet.set_device(config->device);
         unet.start_engine();
         unet.load_weight(model, "unet.");
-
         euler_sample(&unet, 
             noised_latent, positive_latent, positive_pooled, negative_latent, negative_pooled, config->config_scale,
             controls[0], controls[1], controls[2], controls[3],
             config->sigmas, &(config->rng), &(config->denoiser));
-
         unet.stop_engine();
+
+        for (int i = 0; i < controls.size(); i++) {
+            if (tensor_valid(controls[i]))
+                tensor_destroy(controls[i]);
+        }
+        controls.clear();
+
         syslog_info("unet sample OK !");
     }
     // -----------------------------------------------------------------------------------------
@@ -339,6 +344,13 @@ int text2image(ModelConfig *config)
             config->sigmas, &(config->rng), &(config->denoiser));
 
         unet.stop_engine();
+
+        for (int i = 0; i < controls.size(); i++) {
+            if (tensor_valid(controls[i]))
+                tensor_destroy(controls[i]);
+        }
+        controls.clear();
+
         syslog_info("unet sample OK.");
     }
 
@@ -351,8 +363,8 @@ int text2image(ModelConfig *config)
     tensor_destroy(noised_latent);
     check_tensor(y);
     tensor_saveas_image(y, 0, config->output_path);
-
     tensor_destroy(y);
+
     vae.stop_engine();
     syslog_info("vae decode OK.");
 
@@ -542,7 +554,6 @@ static TENSOR *denoise_model(
         }
     }
 
-    // xxxx_8888
     tensor_destroy(noised_input);
     tensor_destroy(timesteps);
     tensor_destroy(negative_output);
@@ -550,8 +561,6 @@ static TENSOR *denoise_model(
 
     return noised_output;
 }
-
-
 
 #define GGML_ENGINE_IMPLEMENTATION
 #include <ggml_engine.h>

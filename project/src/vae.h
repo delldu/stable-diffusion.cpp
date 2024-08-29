@@ -110,11 +110,13 @@ struct ResnetBlock {
     {
         norm1_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, in_channels);
         norm1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, in_channels);
+
         conv1_w = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, 3, 3, in_channels, out_channels);
         conv1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
 
         norm2_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
         norm2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
+
         conv2_w = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, 3, 3, out_channels, out_channels);
         conv2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
 
@@ -614,7 +616,7 @@ struct AutoEncoderKL : GGMLNetwork {
 
     void setup_weight_names(const char* prefix)
     {
-        char s[512];
+        char s[GGML_MAX_NAME];
 
         ggml_format_name(quant_conv_w, "%s%s", prefix, "quant_conv.weight");
         ggml_format_name(quant_conv_b, "%s%s", prefix, "quant_conv.bias");

@@ -50,7 +50,7 @@ struct AdapterResnetBlock {
         // h = self.block2(h)
         // return h + x
         auto h = block1.forward(ctx, x);
-        h = ggml_relu(ctx, h);
+        h = ggml_relu_inplace(ctx, h);
         h = block2.forward(ctx, h);
 
       	h = ggml_add(ctx, x, h);

@@ -33,8 +33,8 @@ struct ModelConfig {
     float control_strength = 0.8f;
 
     // Output ...
-    int width = 512;
-    int height = 512;
+    int width = 1024;
+    int height = 1024;
     char *output_path = (char *)"output.png";
 
     int verbose = 1;

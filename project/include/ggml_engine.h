@@ -45,7 +45,7 @@ Header only file for ggml engine
 #include "ggml_nn.h"
 
 #define ENGINE_VERSION "1.0.0"
-#define MAX_INPUT_TENSORS 16
+#define MAX_INPUT_TENSORS 10
 #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
 // GGML Engine
@@ -541,7 +541,7 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
     // Compute ...
     {
         ggml_backend_graph_compute(m_ggml_engine.backend, gf);
-
+        
         // ggml_graph_print(gf);
         struct ggml_tensor* y = gf->nodes[gf->n_nodes - 1];
         CHECK_POINT(y != NULL);

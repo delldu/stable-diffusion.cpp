@@ -59,11 +59,12 @@ struct Linear {
     struct ggml_tensor* weight;
     struct ggml_tensor* bias = NULL;
 
-    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype = GGML_TYPE_F16)
+    void create_weight_tensors(struct ggml_context* ctx, ggml_type wtype = GGML_TYPE_Q8_0)
     {
         weight = ggml_new_tensor_2d(ctx, wtype, in_features, out_features);
         if (has_bias) {
-            bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_Q8_0)? GGML_TYPE_F16 : GGML_TYPE_F32, out_features);
+            // bias = ggml_new_tensor_1d(ctx, (wtype == GGML_TYPE_Q8_0)? GGML_TYPE_F16 : GGML_TYPE_F32, out_features);
+            bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_features);
         }
     }
 
