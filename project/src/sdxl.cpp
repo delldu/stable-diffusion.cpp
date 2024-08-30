@@ -135,7 +135,6 @@ static std::vector<TENSOR *>get_controls(ModelConfig *config)
         if (! tensor_valid(image_tensor))
             return res;
     }
-    // tensor_show((char *)"image_tensor", image_tensor);
 
     FullAdapterXL net;
     net.set_device(config->device);

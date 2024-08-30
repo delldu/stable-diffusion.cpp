@@ -83,7 +83,7 @@ TENSOR *vae_decode(AutoEncoderKL *vae, TENSOR *latent)
         latent->data[i] = latent->data[i]/scale_factor;
     }
 
-    if (latent->height <= 64 && latent->width <= 64) { // same as raw image size < 512x512
+    if (latent->height <= 96 && latent->width <= 96) { // same as raw image size < 768x768
         vae->encode_flag = false;
         TENSOR* argv[] = { latent };
         TENSOR* image = vae->engine_forward(ARRAY_SIZE(argv), argv); // output_tile
@@ -100,7 +100,7 @@ TENSOR *vae_decode(AutoEncoderKL *vae, TENSOR *latent)
     }
 
     // big latent ... 
-    int tile_size = 64; // 32;
+    int tile_size = 96; // 32;
     int tile_overlap = 16;
     int non_tile_overlap = tile_size - tile_overlap;
 
@@ -120,6 +120,8 @@ TENSOR *vae_decode(AutoEncoderKL *vae, TENSOR *latent)
         // i in [start_row, start_row + tile_size)
         bool last_col = false;
         for (int start_col = 0; start_col < latent->width && (! last_col); start_col += non_tile_overlap) {
+            syslog_info("vae decode at (%d, %d) with tile size %d ...", start_row, start_col, tile_size);
+
             if (start_col + tile_size >= latent->width) {
                 start_col = latent->width - tile_size;
                 last_col = true;
@@ -157,9 +159,6 @@ static int get_input_tile(TENSOR *input, int start_row, int start_col, TENSOR *i
     check_point(input->batch == input_tile->batch && input->chan == input_tile->chan);
     check_point(input_tile->height == input_tile->width); // suppose input_tile is squre ...
     int tile_size = input_tile->height;
-
-    // CheckPoint("start_row = %d, tile_size = %d, input->height = %d", start_row, tile_size, input->height);
-    // CheckPoint("start_col = %d, tile_size = %d, input->width = %d", start_col, tile_size, input->width);
 
     check_point(start_row >= 0 && start_row + tile_size <= input->height);
     check_point(start_col >= 0 && start_col + tile_size <= input->width);

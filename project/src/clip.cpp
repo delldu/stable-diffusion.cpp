@@ -100,7 +100,7 @@ std::vector<TENSOR *> clip_encode(TextEncoder *clip, char *text, int height, int
         TENSOR *input_large_14 = tensor_create(1, 1, 1, CHUNK_LEN77); // f32 [    77,     1,     1,     1]
         if (input_large_14) {
             for (int j = 0; j < CHUNK_LEN77; j++) {
-                input_large_14->data[j] = (float)tokens[j];
+                input_large_14->data[j] = (float)chunk_tokens[j]; // tokens[j];
             }
         } else {
             syslog_error("Allocate memory for input_large_14.");
@@ -112,11 +112,10 @@ std::vector<TENSOR *> clip_encode(TextEncoder *clip, char *text, int height, int
             std::fill(std::next(it), chunk_tokens.end(), 0);
         }
         size_t max_token_idx = std::min<size_t>(std::distance(chunk_tokens.begin(), it), chunk_tokens.size() - 1);
-
         TENSOR *input_bigg_14 = tensor_create(1, 1, 1, CHUNK_LEN77); // f32 [    77,     1,     1,     1]
         if (input_bigg_14) {
             for (int j = 0; j < CHUNK_LEN77; j++) {
-                input_bigg_14->data[j] = (float)tokens[j];
+                input_bigg_14->data[j] = (float)chunk_tokens[j]; // tokens[j]; // 
             }
         } else {
             syslog_error("Allocate memory for input_bigg_14.");

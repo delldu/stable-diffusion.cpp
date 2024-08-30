@@ -157,8 +157,8 @@ protected:
     void m_clear_output_tensors();
 };
 
-int set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt, bool to_backend); // nt -- nimage tensor
-TENSOR* get_tensor_value(struct ggml_tensor* tensor, bool from_backend);
+int set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt); // , bool to_backend); // nt -- nimage tensor
+TENSOR* get_tensor_value(struct ggml_tensor* tensor); // , bool from_backend);
 void ggml_tensor_dump(struct ggml_tensor* tensor);
 static int tensor_data_cast(struct ggml_tensor* s, void* s_data, struct ggml_tensor* d, void* d_data, std::vector<char> temp_buffer);
 
@@ -448,7 +448,7 @@ int GGMLNetwork::load_weight(GGMLModel* model, const char* prefix)
                 ggml_backend_tensor_set(t, dest_buffer.data(), 0, ggml_nbytes(t));
             }
         }
-        syslog_debug("Loading %s ... OK", t->name);
+        // syslog_debug("Loading %s ... OK", t->name);
         n_loaded_tensors++;
     }
     read_buffer.clear();
@@ -546,14 +546,14 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
         struct ggml_tensor* y = gf->nodes[gf->n_nodes - 1];
         CHECK_POINT(y != NULL);
 
-        output = get_tensor_value(y, true /*from_backend*/);
+        output = get_tensor_value(y); // , true /*from_backend*/);
 
         // Save output tensors
         for (int i = 0; i < gf->n_leafs; i++) {
             struct ggml_tensor* leaf = gf->leafs[i];
             if (leaf->flags & GGML_TENSOR_FLAG_OUTPUT) {
                 // Saving leafs ...
-                TENSOR* yt = get_tensor_value(leaf, true /*from_backend*/);
+                TENSOR* yt = get_tensor_value(leaf); // , true /*from_backend*/);
                 m_ggml_engine.output_tensors[std::string(leaf->name)] = yt;
             }
         }
@@ -562,7 +562,7 @@ TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
             struct ggml_tensor* node = gf->nodes[i];
             if (node->flags & GGML_TENSOR_FLAG_OUTPUT) {
                 // Saving nodes ...
-                TENSOR* yt = get_tensor_value(node, true /*from_backend*/);
+                TENSOR* yt = get_tensor_value(node); // , true /*from_backend*/);
                 m_ggml_engine.output_tensors[std::string(node->name)] = yt;
             }
         }
@@ -756,10 +756,12 @@ static bool _same_data_shape(struct ggml_tensor* tensor, TENSOR* nt)
     return ok;
 }
 
-TENSOR* get_tensor_value(struct ggml_tensor* tensor, bool from_backend = false)
+TENSOR* get_tensor_value(struct ggml_tensor* tensor) // , bool from_backend = false)
 {
     CHECK_POINT(tensor);
     void* backend_data = NULL;
+
+    bool from_backend = (tensor->buffer != NULL &&  !ggml_backend_buffer_is_host(tensor->buffer));
 
     if (from_backend) {
         size_t n = (size_t)ggml_nbytes(tensor);
@@ -797,10 +799,12 @@ TENSOR* get_tensor_value(struct ggml_tensor* tensor, bool from_backend = false)
     return nt;
 }
 
-int set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt, bool to_backend = false)
+int set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt) // , bool to_backend = false)
 {
     check_point(tensor != NULL);
     check_tensor(nt);
+
+    bool to_backend = (tensor->buffer != NULL &&  !ggml_backend_buffer_is_host(tensor->buffer));
 
     // B, C, H, W
     check_point(_same_data_shape(tensor, nt));
